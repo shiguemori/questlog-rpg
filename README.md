@@ -22,10 +22,13 @@ assets/     placeholders + pipeline Blender (congelado)
 ```bash
 cd mobile
 npm install
-npm start          # Expo Go / emulador
-npm test           # domínio XP
+npm start          # Expo Go / emulador (use `npx expo start -c` após trocar dependências)
+npm test           # domínio + integração (node:test) e componentes/fluxo (Jest)
+npm run lint
 npm run typecheck
 ```
+
+Backlog priorizado: [`docs/BACKLOG-50.md`](docs/BACKLOG-50.md). Testes em aparelho: [`docs/MANUAL-TEST-CHECKLIST.md`](docs/MANUAL-TEST-CHECKLIST.md).
 
 Protótipo web (opcional): `cd web && npm install && npm run dev`.
 

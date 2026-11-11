@@ -10,6 +10,8 @@ Documentação enxuta do produto mobile Shiguemori. Display name: **QuestLog**. 
 | [04 — Brand](04-brand.md) | UI: slate + amber; marca Shiguemori |
 | [05 — ADR escopo MVP](05-adr-escopo-mvp.md) | O que NÃO entra agora |
 | [06 — Pipeline Blender](06-pipeline-blender.md) | Pastas + naming; sem fábrica de assets |
+| [Backlog 50](BACKLOG-50.md) | 50 itens P0–P3 com critério de aceite e status |
+| [Checklist manual](MANUAL-TEST-CHECKLIST.md) | Roteiro de teste em aparelho (Android + iPhone) |
 | Raiz — [PRODUCT_PLAN.md](../PRODUCT_PLAN.md) | Discovery completo (não descartar) |
 
 **Abortar polish/Blender** se o loop onboarding → registrar → concluir quest ainda não roda no Expo.

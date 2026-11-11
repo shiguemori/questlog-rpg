@@ -1,16 +1,17 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect } from 'react';
 import {
-  AccessibilityInfo,
   Animated,
   Easing,
   Modal,
   Pressable,
   StyleSheet,
   Text,
+  useAnimatedValue,
   View,
 } from 'react-native';
 import { XP_DENY_COPY } from '../domain/antiFarm';
 import type { QuestVictoryEvent } from '../domain/victory';
+import { useReducedMotion } from '../platform/feedback';
 import { colors } from '../theme/colors';
 
 export interface VillainDefeatOverlayProps {
@@ -31,81 +32,79 @@ export function VillainDefeatOverlay({
   onDismiss,
 }: VillainDefeatOverlayProps) {
   const visible = event != null;
-  const opacity = useRef(new Animated.Value(0)).current;
-  const villainOpacity = useRef(new Animated.Value(0)).current;
-  const villainY = useRef(new Animated.Value(12)).current;
-  const slash = useRef(new Animated.Value(0)).current;
+  const reduceMotion = useReducedMotion();
+  const opacity = useAnimatedValue(0);
+  const villainOpacity = useAnimatedValue(0);
+  const villainY = useAnimatedValue(12);
+  const slash = useAnimatedValue(0);
 
+  // Entrada síncrona: o card nunca fica invisível esperando resposta do sistema.
   useEffect(() => {
-    if (!event) return;
-    let cancelled = false;
+    if (!event) return undefined;
     const isVictory = event.outcome === 'VICTORY';
 
-    AccessibilityInfo.isReduceMotionEnabled().then((reduce) => {
-      if (cancelled) return;
+    opacity.setValue(0);
+    Animated.timing(opacity, {
+      toValue: 1,
+      duration: 180,
+      easing: EASE_OUT,
+      useNativeDriver: true,
+    }).start();
 
-      if (reduce) {
-        opacity.setValue(1);
-        villainOpacity.setValue(isVictory ? 0.35 : 0.7);
-        villainY.setValue(0);
-        slash.setValue(isVictory ? 1 : 0);
-        return;
-      }
+    // Reduzir movimento: só o fade do card; vilão já aparece no estado final.
+    if (reduceMotion) {
+      villainOpacity.setValue(isVictory ? 0.35 : 0.7);
+      villainY.setValue(0);
+      slash.setValue(isVictory ? 1 : 0);
+      return undefined;
+    }
 
-      opacity.setValue(0);
-      villainOpacity.setValue(0);
-      villainY.setValue(12);
-      slash.setValue(0);
+    let cancelled = false;
+    villainOpacity.setValue(0);
+    villainY.setValue(12);
+    slash.setValue(0);
 
-      Animated.timing(opacity, {
+    Animated.parallel([
+      Animated.timing(villainOpacity, {
         toValue: 1,
-        duration: 180,
+        duration: 200,
         easing: EASE_OUT,
         useNativeDriver: true,
-      }).start();
-
+      }),
+      Animated.timing(villainY, {
+        toValue: 0,
+        duration: 200,
+        easing: EASE_OUT,
+        useNativeDriver: true,
+      }),
+    ]).start(() => {
+      if (cancelled || !isVictory) return;
       Animated.parallel([
-        Animated.timing(villainOpacity, {
+        Animated.timing(slash, {
           toValue: 1,
-          duration: 200,
+          duration: 160,
+          easing: EASE_OUT,
+          useNativeDriver: true,
+        }),
+        Animated.timing(villainOpacity, {
+          toValue: 0.25,
+          duration: 280,
           easing: EASE_OUT,
           useNativeDriver: true,
         }),
         Animated.timing(villainY, {
-          toValue: 0,
-          duration: 200,
+          toValue: 18,
+          duration: 280,
           easing: EASE_OUT,
           useNativeDriver: true,
         }),
-      ]).start(() => {
-        if (cancelled || !isVictory) return;
-        Animated.parallel([
-          Animated.timing(slash, {
-            toValue: 1,
-            duration: 160,
-            easing: EASE_OUT,
-            useNativeDriver: true,
-          }),
-          Animated.timing(villainOpacity, {
-            toValue: 0.25,
-            duration: 280,
-            easing: EASE_OUT,
-            useNativeDriver: true,
-          }),
-          Animated.timing(villainY, {
-            toValue: 18,
-            duration: 280,
-            easing: EASE_OUT,
-            useNativeDriver: true,
-          }),
-        ]).start();
-      });
+      ]).start();
     });
 
     return () => {
       cancelled = true;
     };
-  }, [event, opacity, villainOpacity, villainY, slash]);
+  }, [event, reduceMotion, opacity, villainOpacity, villainY, slash]);
 
   if (!event) return null;
 
@@ -127,7 +126,7 @@ export function VillainDefeatOverlay({
             {isVictory ? 'Combate' : 'Sem recompensa'}
           </Text>
           <Text style={styles.title}>
-            {isVictory ? 'Vilão derrotado!' : 'Quest marcada'}
+            {isVictory ? event.villain.defeatedTitle : 'Quest marcada'}
           </Text>
 
           <View style={styles.arena}>
@@ -146,7 +145,7 @@ export function VillainDefeatOverlay({
               <View style={styles.villainEyeL} />
               <View style={styles.villainEyeR} />
               <Text style={styles.villainLabel}>
-                {isVictory ? 'SOMBRA' : 'ESCAPOU'}
+                {isVictory ? event.villain.name.toUpperCase() : 'ESCAPOU'}
               </Text>
             </Animated.View>
             {isVictory ? (

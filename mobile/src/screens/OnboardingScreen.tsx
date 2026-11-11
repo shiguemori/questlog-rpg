@@ -1,14 +1,18 @@
 import React, { useState } from 'react';
 import {
+  KeyboardAvoidingView,
+  Platform,
   Pressable,
-  SafeAreaView,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { HeroAvatar } from '../components/HeroAvatar';
 import { CLASS_DEFAULTS } from '../domain/constants';
+import { HERO_NAME_MAX_LENGTH } from '../domain/state';
 import type { CharacterClass } from '../domain/types';
 import { colors } from '../theme/colors';
 
@@ -17,19 +21,42 @@ interface OnboardingScreenProps {
 }
 
 const CLASSES = Object.keys(CLASS_DEFAULTS) as CharacterClass[];
+const HERO_NAME_MIN_LENGTH = 2;
 
 export function OnboardingScreen({ onComplete }: OnboardingScreenProps) {
+  const insets = useSafeAreaInsets();
   const [name, setName] = useState('');
   const [characterClass, setCharacterClass] = useState<CharacterClass>('WARRIOR');
+  const [nameError, setNameError] = useState<string | null>(null);
 
-  const canContinue = name.trim().length >= 2;
+  const trimmedName = name.trim();
+
+  const changeName = (value: string) => {
+    setName(value);
+    if (nameError) setNameError(null);
+  };
+
+  const submit = () => {
+    if (trimmedName.length < HERO_NAME_MIN_LENGTH) {
+      setNameError(`Dê um nome com pelo menos ${HERO_NAME_MIN_LENGTH} letras para o seu herói.`);
+      return;
+    }
+    onComplete(trimmedName, characterClass);
+  };
 
   return (
-    <SafeAreaView style={styles.safe}>
+    <KeyboardAvoidingView
+      style={[styles.screen, { paddingTop: insets.top }]}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
       <View style={styles.atmosphere} pointerEvents="none">
         <View style={styles.glowOrb} />
       </View>
-      <View style={styles.container}>
+      <ScrollView
+        contentContainerStyle={[styles.container, { paddingBottom: insets.bottom + 24 }]}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
         <Text style={styles.brand}>QuestLog</Text>
         <Text style={styles.title}>Crie seu herói</Text>
         <Text style={styles.subtitle}>
@@ -39,27 +66,33 @@ export function OnboardingScreen({ onComplete }: OnboardingScreenProps) {
         <View style={styles.preview}>
           <HeroAvatar
             characterClass={characterClass}
-            initial={name.trim() || undefined}
+            initial={trimmedName || undefined}
             size={96}
           />
-          <Text style={styles.previewClass}>
-            {CLASS_DEFAULTS[characterClass].label}
-          </Text>
+          <Text style={styles.previewClass}>{CLASS_DEFAULTS[characterClass].label}</Text>
         </View>
 
         <Text style={styles.label}>Nome do herói</Text>
         <TextInput
-          style={styles.input}
+          style={[styles.input, nameError != null && styles.inputError]}
           value={name}
-          onChangeText={setName}
+          onChangeText={changeName}
           placeholder="ex: Lucas"
           placeholderTextColor={colors.textDim}
           autoCapitalize="words"
-          maxLength={24}
+          autoCorrect={false}
+          returnKeyType="done"
+          maxLength={HERO_NAME_MAX_LENGTH}
+          accessibilityLabel="Nome do herói"
         />
+        {nameError ? (
+          <Text style={styles.error} accessibilityLiveRegion="polite">
+            {nameError}
+          </Text>
+        ) : null}
 
         <Text style={styles.label}>Classe</Text>
-        <View style={styles.classRow}>
+        <View style={styles.classRow} accessibilityRole="radiogroup">
           {CLASSES.map((cls) => {
             const meta = CLASS_DEFAULTS[cls];
             const selected = characterClass === cls;
@@ -68,8 +101,9 @@ export function OnboardingScreen({ onComplete }: OnboardingScreenProps) {
                 key={cls}
                 onPress={() => setCharacterClass(cls)}
                 style={[styles.classCard, selected && styles.classCardSelected]}
-                accessibilityRole="button"
-                accessibilityState={{ selected }}
+                accessibilityRole="radio"
+                accessibilityState={{ selected, checked: selected }}
+                accessibilityLabel={`${meta.label}. ${meta.blurb}`}
               >
                 <HeroAvatar characterClass={cls} size={40} />
                 <View style={styles.classCopy}>
@@ -84,20 +118,19 @@ export function OnboardingScreen({ onComplete }: OnboardingScreenProps) {
         </View>
 
         <Pressable
-          style={[styles.cta, !canContinue && styles.ctaDisabled]}
-          disabled={!canContinue}
-          onPress={() => onComplete(name.trim(), characterClass)}
+          style={({ pressed }) => [styles.cta, pressed && styles.pressed]}
+          onPress={submit}
           accessibilityRole="button"
         >
           <Text style={styles.ctaText}>Começar jornada</Text>
         </Pressable>
-      </View>
-    </SafeAreaView>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.bg },
+  screen: { flex: 1, backgroundColor: colors.bg },
   atmosphere: { ...StyleSheet.absoluteFill, overflow: 'hidden' },
   glowOrb: {
     position: 'absolute',
@@ -108,7 +141,7 @@ const styles = StyleSheet.create({
     borderRadius: 100,
     backgroundColor: 'rgba(245, 158, 11, 0.14)',
   },
-  container: { flex: 1, paddingHorizontal: 20, paddingTop: 24, gap: 12 },
+  container: { flexGrow: 1, paddingHorizontal: 20, paddingTop: 24, gap: 12 },
   brand: {
     fontSize: 14,
     fontWeight: '800',
@@ -149,6 +182,8 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 16,
   },
+  inputError: { borderColor: colors.danger },
+  error: { fontSize: 13, fontWeight: '600', color: colors.danger },
   classRow: { gap: 10 },
   classCard: {
     borderRadius: 14,
@@ -171,13 +206,12 @@ const styles = StyleSheet.create({
   classBlurb: { marginTop: 4, fontSize: 13, color: colors.textMuted },
   cta: {
     marginTop: 'auto',
-    marginBottom: 16,
     minHeight: 52,
     borderRadius: 14,
     backgroundColor: colors.amber,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  ctaDisabled: { opacity: 0.4 },
   ctaText: { fontSize: 16, fontWeight: '800', color: colors.bg },
+  pressed: { opacity: 0.85, transform: [{ scale: 0.97 }] },
 });

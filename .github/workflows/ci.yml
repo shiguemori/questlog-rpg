@@ -20,10 +20,14 @@ jobs:
           cache-dependency-path: mobile/package-lock.json
       - name: Install
         run: npm ci
+      - name: Lint
+        run: npm run lint
       - name: Typecheck
         run: npm run typecheck
-      - name: Test
-        run: npm test
+      - name: Test (domínio + integração)
+        run: npm run test:domain
+      - name: Test (componentes e fluxo)
+        run: npm run test:ui -- --ci
 
   web:
     runs-on: ubuntu-latest

@@ -3,16 +3,24 @@
   "version": "1.0.0",
   "main": "index.ts",
   "dependencies": {
-    "@react-native-async-storage/async-storage": "^3.1.1",
-    "expo": "~58.0.23",
-    "expo-status-bar": "~58.0.4",
+    "@react-native-async-storage/async-storage": "2.2.0",
+    "expo": "~58.0.24",
+    "expo-haptics": "~58.0.7",
+    "expo-status-bar": "~58.0.5",
     "react": "19.3.0",
-    "react-native": "0.88.1"
+    "react-native": "0.88.1",
+    "react-native-safe-area-context": "~5.11.1"
   },
   "devDependencies": {
     "@expo/ngrok": "^4.1.3",
+    "@testing-library/react-native": "^14.1.0",
+    "@types/jest": "30.0.0",
     "@types/node": "^22.20.5",
     "@types/react": "~19.3.0",
+    "eslint": "^9.39.5",
+    "eslint-config-expo": "~58.0.4",
+    "jest": "~30.5.2",
+    "jest-expo": "~58.0.14",
     "tsx": "^4.23.15",
     "typescript": "~6.0.3"
   },
@@ -22,7 +30,17 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "typecheck": "tsc --noEmit",
-    "test": "npx tsx --test src/domain/xp.test.ts src/domain/antiFarm.test.ts src/domain/completeQuest.test.ts src/domain/questPresets.test.ts src/domain/victory.test.ts"
+    "lint": "eslint . --max-warnings 0",
+    "test": "npm run test:domain && npm run test:ui",
+    "test:domain": "tsx --test \"src/**/*.test.ts\"",
+    "test:ui": "jest"
+  },
+  "jest": {
+    "preset": "jest-expo",
+    "testMatch": [
+      "**/*.spec.ts",
+      "**/*.spec.tsx"
+    ]
   },
   "private": true
 }

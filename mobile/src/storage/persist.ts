@@ -1,51 +1,36 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { CLASS_DEFAULTS, INITIAL_MAX_XP } from '../domain/constants';
-import type { AppState } from '../domain/types';
+import {
+  createSafeStorage,
+  createStateStore,
+  type KeyValueStorage,
+  type SafeStorage,
+  type StateStore,
+} from './stateStore';
 
-const STORAGE_KEY = 'QUESTLOG_RPG_MOBILE_V1';
-
-export function createInitialState(): AppState {
-  return {
-    onboardingDone: false,
-    character: {
-      name: '',
-      characterClass: 'WARRIOR',
-      level: 1,
-      xp: 0,
-      maxXp: INITIAL_MAX_XP,
-      attributes: { ...CLASS_DEFAULTS.WARRIOR.attributes },
-      attributePoints: 0,
-    },
-    quests: [],
-    stats: {
-      streak: 0,
-      lastCompletedDate: null,
-      totalXpEarned: 0,
-      totalQuestsCompleted: 0,
-      dailyXpCompletions: 0,
-      dailyXpCompletionsDate: null,
-    },
-  };
-}
-
-export async function loadState(): Promise<AppState> {
+/**
+ * Ligação com o AsyncStorage do aparelho.
+ *
+ * O `require` é tardio e protegido de propósito: quando o binário (ex.: Expo Go)
+ * não traz o módulo nativo na versão esperada, o pacote lança
+ * "Native module is null" já no import. Com import estático o app morreria
+ * antes da primeira tela; aqui ele só perde a persistência daquela sessão.
+ */
+function resolveDeviceStorage(): KeyValueStorage | null {
   try {
-    const raw = await AsyncStorage.getItem(STORAGE_KEY);
-    if (!raw) return createInitialState();
-    const parsed = JSON.parse(raw) as Partial<AppState>;
-    const base = createInitialState();
-    return {
-      ...base,
-      ...parsed,
-      character: { ...base.character, ...parsed.character },
-      stats: { ...base.stats, ...parsed.stats },
-      quests: parsed.quests ?? base.quests,
-    };
+    // eslint-disable-next-line @typescript-eslint/no-require-imports -- carregamento tardio proposital (ver comentário acima)
+    const loaded = require('@react-native-async-storage/async-storage');
+    const candidate = loaded?.default ?? loaded;
+    const usable =
+      candidate != null &&
+      typeof candidate.getItem === 'function' &&
+      typeof candidate.setItem === 'function' &&
+      typeof candidate.removeItem === 'function';
+    return usable ? (candidate as KeyValueStorage) : null;
   } catch {
-    return createInitialState();
+    return null;
   }
 }
 
-export async function saveState(state: AppState): Promise<void> {
-  await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-}
+export const deviceStorage: SafeStorage = createSafeStorage(resolveDeviceStorage());
+
+/** Único ponto de leitura/gravação do save do jogador. */
+export const stateStore: StateStore = createStateStore(deviceStorage);
