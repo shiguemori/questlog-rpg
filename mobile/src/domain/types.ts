@@ -9,7 +9,10 @@ export interface Quest {
   difficulty: Difficulty;
   xp: number;
   completed: boolean;
+  /** ISO 8601 — base do anti-farm (idade mínima da quest). */
   createdAt: string;
+  /** ISO 8601 do momento da conclusão. Ausente em saves antigos. */
+  completedAt?: string;
 }
 
 export interface Attributes {
@@ -18,6 +21,8 @@ export interface Attributes {
   agility: number;
   vitality: number;
 }
+
+export type AttributeKey = keyof Attributes;
 
 export interface Character {
   name: string;
@@ -31,6 +36,9 @@ export interface Character {
 
 export interface UserStats {
   streak: number;
+  /** Maior streak já atingido — base das conquistas de constância. */
+  bestStreak: number;
+  /** Dia civil local (YYYY-MM-DD) da última conclusão. */
   lastCompletedDate: string | null;
   totalXpEarned: number;
   totalQuestsCompleted: number;

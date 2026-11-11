@@ -1,4 +1,5 @@
 import { ATTRIBUTE_POINTS_PER_LEVEL, INITIAL_MAX_XP, XP_GROWTH_FACTOR } from './constants';
+import { previousIsoDate } from './dates';
 import type { UserStats } from './types';
 
 export interface LevelProgress {
@@ -15,9 +16,11 @@ export function applyXp(
   maxXp: number,
   amount: number,
 ): LevelProgress {
+  // Guardas: save corrompido (maxXp <= 0) não pode travar o app em loop infinito.
+  const safeAmount = Number.isFinite(amount) && amount > 0 ? Math.floor(amount) : 0;
   let nextLevel = level;
-  let nextXp = xp + amount;
-  let nextMaxXp = maxXp;
+  let nextXp = Math.max(0, xp) + safeAmount;
+  let nextMaxXp = Number.isFinite(maxXp) && maxXp >= 1 ? maxXp : maxXpForLevel(level);
   let attributePointsGained = 0;
 
   while (nextXp >= nextMaxXp) {
@@ -47,12 +50,8 @@ export function maxXpForLevel(level: number): number {
 export function nextStreak(stats: UserStats, todayIsoDate: string): number {
   const lastDate = stats.lastCompletedDate;
   if (lastDate === null) return 1;
-  if (lastDate === todayIsoDate) return stats.streak;
-
-  const yesterday = new Date(`${todayIsoDate}T12:00:00`);
-  yesterday.setDate(yesterday.getDate() - 1);
-  const yesterdayStr = yesterday.toISOString().split('T')[0];
-
-  if (lastDate === yesterdayStr) return stats.streak + 1;
+  // Mesmo dia — ou relógio atrasado: não pune nem premia.
+  if (lastDate >= todayIsoDate) return Math.max(1, stats.streak);
+  if (lastDate === previousIsoDate(todayIsoDate)) return stats.streak + 1;
   return 1;
 }

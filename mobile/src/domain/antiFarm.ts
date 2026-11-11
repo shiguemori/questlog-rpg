@@ -53,6 +53,38 @@ export function nextDailyXpCompletions(
   };
 }
 
+/**
+ * Quanto falta (ms) para a quest poder gerar XP. 0 = já liberada.
+ * Mesma régua de `evaluateXpEligibility` — a UI usa para o contador regressivo.
+ */
+export function msUntilXpEligible(quest: Quest, nowMs: number): number {
+  const createdMs = Date.parse(quest.createdAt);
+  if (Number.isNaN(createdMs)) return 0;
+  const remaining = MIN_QUEST_AGE_MS - (nowMs - createdMs);
+  return Math.min(MIN_QUEST_AGE_MS, Math.max(0, remaining));
+}
+
+/** Resumo do limite diário para a UI ("XP hoje 3/10"). */
+export interface DailyXpSummary {
+  xpQuestsToday: number;
+  xpQuestsLimit: number;
+  xpQuestsRemaining: number;
+  limitReached: boolean;
+}
+
+export function buildDailyXpSummary(stats: UserStats, todayIsoDate: string): DailyXpSummary {
+  const xpQuestsToday = Math.min(
+    MAX_XP_QUESTS_PER_DAY,
+    completionsForToday(stats, todayIsoDate),
+  );
+  return {
+    xpQuestsToday,
+    xpQuestsLimit: MAX_XP_QUESTS_PER_DAY,
+    xpQuestsRemaining: MAX_XP_QUESTS_PER_DAY - xpQuestsToday,
+    limitReached: xpQuestsToday >= MAX_XP_QUESTS_PER_DAY,
+  };
+}
+
 export const XP_DENY_COPY: Record<XpDenyReason, string> = {
   TOO_FAST: 'Espere 1 minuto após criar a quest para ganhar XP.',
   DAILY_LIMIT: `Limite diário de ${MAX_XP_QUESTS_PER_DAY} quests com XP atingido. Volte amanhã.`,

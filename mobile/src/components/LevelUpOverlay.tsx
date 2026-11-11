@@ -1,13 +1,17 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect } from 'react';
 import {
-  AccessibilityInfo,
   Animated,
+  Easing,
   Modal,
   Pressable,
   StyleSheet,
   Text,
+  useAnimatedValue,
   View,
 } from 'react-native';
+import { useReducedMotion } from '../platform/feedback';
+
+const EASE_OUT = Easing.bezier(0.23, 1, 0.32, 1);
 
 interface LevelUpOverlayProps {
   visible: boolean;
@@ -26,40 +30,31 @@ export function LevelUpOverlay({
   heroName,
   onDismiss,
 }: LevelUpOverlayProps) {
-  const opacity = useRef(new Animated.Value(0)).current;
-  const scale = useRef(new Animated.Value(0.95)).current;
+  const reduceMotion = useReducedMotion();
+  const opacity = useAnimatedValue(0);
+  const scale = useAnimatedValue(0.95);
 
+  // Entrada síncrona: o card nunca fica invisível esperando resposta do sistema.
+  // Reduzir movimento mantém só o fade (sem escala).
   useEffect(() => {
     if (!visible) return;
-
-    let cancelled = false;
-    AccessibilityInfo.isReduceMotionEnabled().then((reduce) => {
-      if (cancelled) return;
-      if (reduce) {
-        opacity.setValue(1);
-        scale.setValue(1);
-        return;
-      }
-      opacity.setValue(0);
-      scale.setValue(0.95);
-      Animated.parallel([
-        Animated.timing(opacity, {
-          toValue: 1,
-          duration: 220,
-          useNativeDriver: true,
-        }),
-        Animated.timing(scale, {
-          toValue: 1,
-          duration: 220,
-          useNativeDriver: true,
-        }),
-      ]).start();
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [visible, opacity, scale]);
+    opacity.setValue(0);
+    scale.setValue(reduceMotion ? 1 : 0.95);
+    Animated.parallel([
+      Animated.timing(opacity, {
+        toValue: 1,
+        duration: 220,
+        easing: EASE_OUT,
+        useNativeDriver: true,
+      }),
+      Animated.timing(scale, {
+        toValue: 1,
+        duration: reduceMotion ? 0 : 220,
+        easing: EASE_OUT,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, [visible, reduceMotion, opacity, scale]);
 
   return (
     <Modal
@@ -75,7 +70,8 @@ export function LevelUpOverlay({
           <Text style={styles.title}>Level up!</Text>
           <Text style={styles.level}>Nv. {level}</Text>
           <Text style={styles.body}>
-            {heroName}, você ficou mais forte. +2 pontos de atributo aguardam no perfil.
+            {heroName}, você ficou mais forte. Toque no seu herói para distribuir os novos
+            pontos de atributo.
           </Text>
           <Pressable
             style={styles.cta}

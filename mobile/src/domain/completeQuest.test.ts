@@ -1,8 +1,11 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
+import { MAX_XP_QUESTS_PER_DAY } from './antiFarm';
 import { completeQuest } from './completeQuest';
 import { CLASS_DEFAULTS, INITIAL_MAX_XP } from './constants';
+import { localIsoDate } from './dates';
 import type { AppState, Quest } from './types';
+import { xpProgressRatio } from './xpBar';
 
 function makeState(overrides: Partial<AppState> = {}): AppState {
   const quest: Quest = {
@@ -28,6 +31,7 @@ function makeState(overrides: Partial<AppState> = {}): AppState {
     quests: [quest],
     stats: {
       streak: 0,
+      bestStreak: 0,
       lastCompletedDate: null,
       totalXpEarned: 0,
       totalQuestsCompleted: 0,
@@ -79,5 +83,125 @@ describe('completeQuest', () => {
 
   it('retorna null para quest inexistente', () => {
     assert.equal(completeQuest(makeState(), 'missing', new Date()), null);
+  });
+
+  it('quando concede XP, o progresso da barra sobe', () => {
+    const state = makeState({
+      character: {
+        name: 'Lucas',
+        characterClass: 'MAGE',
+        level: 1,
+        xp: 0,
+        maxXp: INITIAL_MAX_XP,
+        attributes: { ...CLASS_DEFAULTS.MAGE.attributes },
+        attributePoints: 0,
+      },
+      quests: [
+        {
+          id: 'q1',
+          title: 'Fácil',
+          category: 'STUDY',
+          difficulty: 'EASY',
+          xp: 10,
+          completed: false,
+          createdAt: '2026-11-11T10:00:00.000Z',
+        },
+      ],
+    });
+    const before = xpProgressRatio(state.character.xp, state.character.maxXp);
+    const result = completeQuest(state, 'q1', new Date('2026-11-11T10:05:00.000Z'));
+    assert.ok(result);
+    assert.equal(result.xpAwarded, 10);
+    assert.equal(result.denyReason, null);
+    const after = xpProgressRatio(
+      result.state.character.xp,
+      result.state.character.maxXp,
+    );
+    assert.equal(before, 0);
+    assert.equal(after, 0.1);
+    assert.ok(after > before);
+  });
+
+  it('não conclui a mesma quest duas vezes (sem XP em dobro)', () => {
+    const now = new Date('2026-11-11T10:05:00.000Z');
+    const first = completeQuest(makeState(), 'q1', now);
+    assert.ok(first);
+    assert.equal(completeQuest(first.state, 'q1', now), null);
+  });
+
+  it('conclui sem XP quando o limite diário já foi atingido', () => {
+    const now = new Date('2026-11-11T10:05:00.000Z');
+    const base = makeState();
+    const state = makeState({
+      stats: {
+        ...base.stats,
+        dailyXpCompletions: MAX_XP_QUESTS_PER_DAY,
+        dailyXpCompletionsDate: localIsoDate(now),
+      },
+    });
+    const result = completeQuest(state, 'q1', now);
+    assert.ok(result);
+    assert.equal(result.xpAwarded, 0);
+    assert.equal(result.denyReason, 'DAILY_LIMIT');
+    assert.equal(result.state.quests[0].completed, true);
+    assert.equal(result.state.character.xp, 80);
+    assert.equal(result.state.stats.dailyXpCompletions, MAX_XP_QUESTS_PER_DAY);
+    assert.equal(result.state.stats.totalXpEarned, 0);
+  });
+
+  it('usa o dia local do aparelho para streak e limite diário', () => {
+    // 23h30 no relógio do jogador: ainda é dia 11, mesmo que em UTC já seja dia 12.
+    const now = new Date(2026, 10, 11, 23, 30);
+    const state = makeState({
+      quests: [
+        {
+          id: 'q1',
+          title: 'Noturna',
+          category: 'OTHER',
+          difficulty: 'EASY',
+          xp: 10,
+          completed: false,
+          createdAt: new Date(2026, 10, 11, 23, 0).toISOString(),
+        },
+      ],
+    });
+    const result = completeQuest(state, 'q1', now);
+    assert.ok(result);
+    assert.equal(result.state.stats.lastCompletedDate, '2026-11-11');
+    assert.equal(result.state.stats.dailyXpCompletionsDate, '2026-11-11');
+  });
+
+  it('registra completedAt, totais e melhor streak', () => {
+    const now = new Date('2026-11-11T10:05:00.000Z');
+    const base = makeState();
+    const state = makeState({
+      stats: { ...base.stats, streak: 2, bestStreak: 2, lastCompletedDate: '2026-11-10' },
+    });
+    const result = completeQuest(state, 'q1', now);
+    assert.ok(result);
+    assert.equal(result.state.quests[0].completedAt, now.toISOString());
+    assert.equal(result.state.stats.totalQuestsCompleted, 1);
+    assert.equal(result.state.stats.totalXpEarned, 50);
+    assert.equal(result.state.stats.streak, 3);
+    assert.equal(result.state.stats.bestStreak, 3);
+  });
+
+  it('melhor streak não diminui quando o streak reinicia', () => {
+    const now = new Date('2026-11-11T10:05:00.000Z');
+    const base = makeState();
+    const state = makeState({
+      stats: { ...base.stats, streak: 5, bestStreak: 5, lastCompletedDate: '2026-11-01' },
+    });
+    const result = completeQuest(state, 'q1', now);
+    assert.ok(result);
+    assert.equal(result.state.stats.streak, 1);
+    assert.equal(result.state.stats.bestStreak, 5);
+  });
+
+  it('não muta o estado recebido', () => {
+    const state = makeState();
+    const snapshot = JSON.stringify(state);
+    completeQuest(state, 'q1', new Date('2026-11-11T10:05:00.000Z'));
+    assert.equal(JSON.stringify(state), snapshot);
   });
 });

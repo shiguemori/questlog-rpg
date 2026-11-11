@@ -1,4 +1,18 @@
-import type { Attributes, Category, CharacterClass, Difficulty } from './types';
+import type { AttributeKey, Attributes, Category, CharacterClass, Difficulty } from './types';
+
+export const ATTRIBUTE_KEYS: AttributeKey[] = [
+  'strength',
+  'intelligence',
+  'agility',
+  'vitality',
+];
+
+export const ATTRIBUTE_LABELS: Record<AttributeKey, string> = {
+  strength: 'Força',
+  intelligence: 'Inteligência',
+  agility: 'Agilidade',
+  vitality: 'Vitalidade',
+};
 
 export const XP_REWARDS: Record<Difficulty, number> = {
   EASY: 10,

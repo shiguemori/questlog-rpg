@@ -3,6 +3,7 @@ import {
   nextDailyXpCompletions,
   type XpDenyReason,
 } from './antiFarm';
+import { localIsoDate } from './dates';
 import type { AppState, Character, Quest, UserStats } from './types';
 import { applyXp, nextStreak } from './xp';
 
@@ -26,7 +27,8 @@ export function completeQuest(
   const quest = state.quests.find((q) => q.id === questId);
   if (!quest || quest.completed) return null;
 
-  const todayIsoDate = now.toISOString().split('T')[0];
+  // Dia civil do aparelho (não UTC): o dia do jogador vira à meia-noite local.
+  const todayIsoDate = localIsoDate(now);
   const eligibility = evaluateXpEligibility(quest, state.stats, now.getTime(), todayIsoDate);
 
   let character: Character = state.character;
@@ -53,17 +55,20 @@ export function completeQuest(
 
   const daily = nextDailyXpCompletions(state.stats, todayIsoDate, eligibility.eligible);
 
+  const streak = nextStreak(state.stats, todayIsoDate);
+
   const stats: UserStats = {
     ...state.stats,
     ...daily,
-    streak: nextStreak(state.stats, todayIsoDate),
+    streak,
+    bestStreak: Math.max(state.stats.bestStreak ?? 0, streak),
     lastCompletedDate: todayIsoDate,
     totalXpEarned: state.stats.totalXpEarned + eligibility.xpAwarded,
     totalQuestsCompleted: state.stats.totalQuestsCompleted + 1,
   };
 
   const quests: Quest[] = state.quests.map((q) =>
-    q.id === questId ? { ...q, completed: true } : q,
+    q.id === questId ? { ...q, completed: true, completedAt: now.toISOString() } : q,
   );
 
   return {
