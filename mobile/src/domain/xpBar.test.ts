@@ -36,20 +36,16 @@ describe('xpProgressPercent', () => {
 
 describe('planXpBarAnimation', () => {
   it('mesmo nível: um trecho direto até a nova fração', () => {
-    assert.deepEqual(
-      planXpBarAnimation({ level: 1, ratio: 0.1 }, { level: 1, ratio: 0.35 }),
-      [{ from: 0.1, to: 0.35 }],
-    );
+    assert.deepEqual(planXpBarAnimation({ level: 1, ratio: 0.1 }, { level: 1, ratio: 0.35 }), [
+      { from: 0.1, to: 0.35 },
+    ]);
   });
 
   it('level up: enche até 100% e recomeça do zero', () => {
-    assert.deepEqual(
-      planXpBarAnimation({ level: 1, ratio: 0.8 }, { level: 2, ratio: 0.2 }),
-      [
-        { from: 0.8, to: 1 },
-        { from: 0, to: 0.2 },
-      ],
-    );
+    assert.deepEqual(planXpBarAnimation({ level: 1, ratio: 0.8 }, { level: 2, ratio: 0.2 }), [
+      { from: 0.8, to: 1 },
+      { from: 0, to: 0.2 },
+    ]);
   });
 
   it('level up nunca termina abaixo do zero do novo nível', () => {
@@ -59,10 +55,9 @@ describe('planXpBarAnimation', () => {
   });
 
   it('nível menor (jornada reiniciada): salto direto', () => {
-    assert.deepEqual(
-      planXpBarAnimation({ level: 4, ratio: 0.6 }, { level: 1, ratio: 0 }),
-      [{ from: 0, to: 0 }],
-    );
+    assert.deepEqual(planXpBarAnimation({ level: 4, ratio: 0.6 }, { level: 1, ratio: 0 }), [
+      { from: 0, to: 0 },
+    ]);
   });
 });
 

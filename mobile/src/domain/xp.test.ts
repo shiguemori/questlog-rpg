@@ -32,6 +32,9 @@ describe('nextStreak', () => {
           totalQuestsCompleted: 0,
           dailyXpCompletions: 0,
           dailyXpCompletionsDate: null,
+          dailyCompletions: 0,
+          dailyCompletionsDate: null,
+          completionDays: [],
         },
         '2026-11-11',
       ),
@@ -50,6 +53,9 @@ describe('nextStreak', () => {
           totalQuestsCompleted: 4,
           dailyXpCompletions: 2,
           dailyXpCompletionsDate: '2026-11-10',
+          dailyCompletions: 2,
+          dailyCompletionsDate: '2026-11-10',
+          completionDays: ['2026-11-10'],
         },
         '2026-11-11',
       ),
@@ -65,6 +71,9 @@ describe('nextStreak', () => {
     totalQuestsCompleted: 0,
     dailyXpCompletions: 0,
     dailyXpCompletionsDate: null,
+    dailyCompletions: 0,
+    dailyCompletionsDate: null,
+    completionDays: [],
   });
 
   it('mantém streak no mesmo dia', () => {

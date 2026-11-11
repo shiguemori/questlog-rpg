@@ -62,6 +62,12 @@ export function OnboardingScreen({ onComplete }: OnboardingScreenProps) {
         <Text style={styles.subtitle}>
           Um nome, uma classe — depois registre sua primeira quest.
         </Text>
+        <View style={styles.promise}>
+          <Text style={styles.promiseTitle}>O hábito cabe num minuto</Text>
+          <Text style={styles.promiseBody}>
+            Abra, feche 1 quest e veja a meta. Amanhã o streak pede só isso. Sem alerta insistente.
+          </Text>
+        </View>
 
         <View style={styles.preview}>
           <HeroAvatar
@@ -124,6 +130,14 @@ export function OnboardingScreen({ onComplete }: OnboardingScreenProps) {
         >
           <Text style={styles.ctaText}>Começar jornada</Text>
         </Pressable>
+        <Pressable
+          style={({ pressed }) => [styles.skip, pressed && styles.pressed]}
+          onPress={() => onComplete('', characterClass)}
+          accessibilityRole="button"
+          accessibilityLabel="Pular e usar o herói padrão"
+        >
+          <Text style={styles.skipText}>Pular</Text>
+        </Pressable>
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -161,6 +175,17 @@ const styles = StyleSheet.create({
     marginBottom: 4,
     lineHeight: 22,
   },
+  promise: {
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.bgElevated,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    gap: 4,
+  },
+  promiseTitle: { fontSize: 14, fontWeight: '800', color: colors.amberSoft },
+  promiseBody: { fontSize: 14, lineHeight: 20, color: colors.textMuted },
   preview: {
     alignItems: 'center',
     gap: 10,
@@ -213,5 +238,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   ctaText: { fontSize: 16, fontWeight: '800', color: colors.bg },
+  skip: {
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  skipText: { fontSize: 15, fontWeight: '700', color: colors.textMuted },
   pressed: { opacity: 0.85, transform: [{ scale: 0.97 }] },
 });

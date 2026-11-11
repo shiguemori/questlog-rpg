@@ -10,12 +10,7 @@ export interface LevelProgress {
 }
 
 /** Aplica XP e sobe de nível enquanto XP >= maxXp. Contrato: SDD do MVP. */
-export function applyXp(
-  level: number,
-  xp: number,
-  maxXp: number,
-  amount: number,
-): LevelProgress {
+export function applyXp(level: number, xp: number, maxXp: number, amount: number): LevelProgress {
   // Guardas: save corrompido (maxXp <= 0) não pode travar o app em loop infinito.
   const safeAmount = Number.isFinite(amount) && amount > 0 ? Math.floor(amount) : 0;
   let nextLevel = level;

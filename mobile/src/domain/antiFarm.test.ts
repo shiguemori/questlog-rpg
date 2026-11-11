@@ -18,6 +18,7 @@ const baseQuest: Quest = {
   xp: 10,
   completed: false,
   createdAt: '2026-11-11T12:00:00.000Z',
+  recurring: false,
 };
 
 const baseStats: UserStats = {
@@ -28,6 +29,9 @@ const baseStats: UserStats = {
   totalQuestsCompleted: 0,
   dailyXpCompletions: 0,
   dailyXpCompletionsDate: null,
+  dailyCompletions: 0,
+  dailyCompletionsDate: null,
+  completionDays: [],
 };
 
 describe('evaluateXpEligibility', () => {
@@ -105,10 +109,7 @@ describe('msUntilXpEligible', () => {
     assert.equal(msUntilXpEligible(baseQuest, at), 0);
     assert.equal(evaluateXpEligibility(baseQuest, baseStats, at, '2026-11-11').eligible, true);
     assert.ok(msUntilXpEligible(baseQuest, at - 1) > 0);
-    assert.equal(
-      evaluateXpEligibility(baseQuest, baseStats, at - 1, '2026-11-11').eligible,
-      false,
-    );
+    assert.equal(evaluateXpEligibility(baseQuest, baseStats, at - 1, '2026-11-11').eligible, false);
   });
 
   it('nunca passa de 1 minuto, mesmo com relógio atrasado', () => {

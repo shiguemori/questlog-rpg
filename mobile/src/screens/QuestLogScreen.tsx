@@ -1,26 +1,35 @@
-import React, { useCallback, useMemo, useState } from 'react';
-import {
-  Alert,
-  Pressable,
-  ScrollView,
-  SectionList,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
+import { Alert, Pressable, ScrollView, SectionList, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { PressScale } from '../motion/PressScale';
 import { HeroAvatar } from '../components/HeroAvatar';
 import { HeroSheet } from '../components/HeroSheet';
 import { QuestCreateModal } from '../components/QuestCreateModal';
 import { QuestRow } from '../components/QuestRow';
+import { WeekStrip } from '../components/WeekStrip';
 import { XpBar } from '../components/XpBar';
-import { buildDailyXpSummary } from '../domain/antiFarm';
+import { buildDailyXpSummary, msUntilXpEligible } from '../domain/antiFarm';
 import { CATEGORIES, CATEGORY_LABELS, CLASS_DEFAULTS } from '../domain/constants';
 import { localIsoDate } from '../domain/dates';
-import { heroRankForLevel } from '../domain/progression';
+import {
+  buildDailyGoal,
+  buildHabitCue,
+  latestQuestDraft,
+  shouldOfferReturn,
+  streakTitle,
+  suggestionForDay,
+} from '../domain/engagement';
+import { heroRankForLevel, nextRankHint } from '../domain/progression';
 import { presetXp, QUEST_PRESETS, type QuestPreset } from '../domain/questPresets';
 import { splitQuests, type CategoryFilter, type NewQuestInput } from '../domain/quests';
-import type { AppState, AttributeKey, Quest } from '../domain/types';
+import type {
+  AppState,
+  AttributeKey,
+  Category,
+  CharacterClass,
+  PlayerSettings,
+  Quest,
+} from '../domain/types';
 import { colors } from '../theme/colors';
 
 interface QuestLogScreenProps {
@@ -37,6 +46,18 @@ interface QuestLogScreenProps {
   onResetJourney: () => void;
   onDismissFeedback: () => void;
   onDismissStorageNotice: () => void;
+  canUndo: boolean;
+  onUndo: () => void;
+  onEditQuest: (questId: string, title: string, category: Category) => string | null;
+  onToggleRecurring: (questId: string) => void;
+  onRename: (name: string) => string | null;
+  onChangeClass: (characterClass: CharacterClass) => void;
+  onPatchSettings: (partial: Partial<PlayerSettings>) => void;
+  onToggleShield: () => void;
+  onImportSave: (raw: string) => string | null;
+  onExportSave: () => void;
+  onShareWeek: () => void;
+  onCalendarDay: () => void;
 }
 
 interface QuestSection {
@@ -60,16 +81,41 @@ export function QuestLogScreen({
   onResetJourney,
   onDismissFeedback,
   onDismissStorageNotice,
+  canUndo,
+  onUndo,
+  onEditQuest,
+  onToggleRecurring,
+  onRename,
+  onChangeClass,
+  onPatchSettings,
+  onToggleShield,
+  onImportSave,
+  onExportSave,
+  onShareWeek,
+  onCalendarDay,
 }: QuestLogScreenProps) {
   const insets = useSafeAreaInsets();
+  const today = useLocalToday();
+  useEffect(() => {
+    onCalendarDay();
+  }, [today, onCalendarDay]);
   const [filter, setFilter] = useState<CategoryFilter>('ALL');
   const [modalOpen, setModalOpen] = useState(false);
   const [heroOpen, setHeroOpen] = useState(false);
   const [showAllDone, setShowAllDone] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   const { character, stats } = state;
   const classLabel = CLASS_DEFAULTS[character.characterClass].label;
-  const daily = buildDailyXpSummary(stats, localIsoDate(new Date()));
+  const daily = buildDailyXpSummary(stats, today);
+  const goal = buildDailyGoal(stats, today, state.settings.dailyGoalTarget);
+  const suggestion = suggestionForDay(today);
+  const showSuggestion = state.settings.dismissedSuggestionDate !== today;
+  const showReturn = shouldOfferReturn(stats, state.settings, today);
+  const editing = state.quests.find((quest) => quest.id === editingId) ?? null;
+  const cue = buildHabitCue(stats, today);
+  const streakName = streakTitle(stats.streak);
+  const repeatDraft = latestQuestDraft(state.quests);
   const points = character.attributePoints;
 
   const { open, done } = useMemo(() => splitQuests(state.quests, filter), [state.quests, filter]);
@@ -109,13 +155,6 @@ export function QuestLogScreen({
     );
   };
 
-  const renderQuest = useCallback(
-    ({ item }: { item: Quest }) => (
-      <QuestRow quest={item} onComplete={onCompleteQuest} onDelete={onDeleteQuest} />
-    ),
-    [onCompleteQuest, onDeleteQuest],
-  );
-
   const listHeader = (
     <View>
       <View style={styles.quickBlock}>
@@ -125,6 +164,53 @@ export function QuestLogScreen({
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.chipScroller}
         >
+          {repeatDraft ? (
+            <Pressable
+              style={({ pressed }) => [styles.presetChip, pressed && styles.pressed]}
+              onPress={() =>
+                setPresetError(
+                  onAddQuest({
+                    title: repeatDraft.title,
+                    difficulty: repeatDraft.difficulty,
+                    category: repeatDraft.category,
+                  }),
+                )
+              }
+              accessibilityRole="button"
+              accessibilityLabel={`Repetir a última quest ${repeatDraft.title}`}
+            >
+              <Text style={styles.presetChipTitle} numberOfLines={1}>
+                De novo · {repeatDraft.title}
+              </Text>
+            </Pressable>
+          ) : null}
+          {showSuggestion ? (
+            <Pressable
+              style={({ pressed }) => [styles.presetChip, pressed && styles.pressed]}
+              onPress={() =>
+                setPresetError(
+                  onAddQuest({
+                    title: suggestion.title,
+                    difficulty: suggestion.difficulty,
+                    category: suggestion.category,
+                  }),
+                )
+              }
+              accessibilityRole="button"
+              accessibilityLabel={`Sugestão de hoje: ${suggestion.title}`}
+            >
+              <Text style={styles.presetChipTitle} numberOfLines={2}>
+                Hoje · {suggestion.chip}
+              </Text>
+              <Pressable
+                onPress={() => onPatchSettings({ dismissedSuggestionDate: today })}
+                accessibilityRole="button"
+                accessibilityLabel="Dispensar sugestão de hoje"
+              >
+                <Text style={styles.presetChipMeta}>Dispensar</Text>
+              </Pressable>
+            </Pressable>
+          ) : null}
           {QUEST_PRESETS.map((preset) => (
             <Pressable
               key={preset.id}
@@ -178,9 +264,11 @@ export function QuestLogScreen({
         <View style={styles.emptyBlock}>
           <Text style={styles.empty}>
             {filter === 'ALL'
-              ? noQuestsAtAll
-                ? 'Sua jornada começa com a primeira quest. Toque em uma atividade rápida ou crie a sua.'
-                : 'Tudo concluído por aqui. Que tal registrar a próxima quest?'
+              ? goal.met
+                ? 'Meta de hoje feita. Amanhã uma quest mantém o streak.'
+                : noQuestsAtAll
+                  ? 'Feche 1 quest hoje. Isso basta para a meta do dia.'
+                  : 'Tudo concluído por aqui. Falta a quest de hoje para a meta.'
               : `Nenhuma quest aberta em ${CATEGORY_LABELS[filter]}.`}
           </Text>
           <Pressable
@@ -242,7 +330,7 @@ export function QuestLogScreen({
             size={64}
           />
           <View style={styles.heroCopy}>
-            <Text style={styles.heroName} numberOfLines={1}>
+            <Text style={styles.heroName} numberOfLines={2}>
               {character.name}
             </Text>
             <Text style={styles.heroMeta}>
@@ -257,9 +345,19 @@ export function QuestLogScreen({
         </Pressable>
 
         <XpBar xp={character.xp} maxXp={character.maxXp} level={character.level} />
+        <Text style={styles.rankHint} testID="next-rank">
+          {nextRankHint(character.level)}
+        </Text>
 
         <View style={styles.statRow}>
           <Text style={styles.statChip}>Streak {stats.streak}d</Text>
+          {streakName ? <Text style={styles.statChip}>{streakName}</Text> : null}
+          <Text
+            style={[styles.statChip, goal.met && styles.statChipAlert]}
+            testID="daily-goal-chip"
+          >
+            Meta {goal.done}/{goal.target}
+          </Text>
           <Text
             style={[styles.statChip, daily.limitReached && styles.statChipAlert]}
             testID="daily-xp-chip"
@@ -267,6 +365,10 @@ export function QuestLogScreen({
             XP hoje {daily.xpQuestsToday}/{daily.xpQuestsLimit}
           </Text>
         </View>
+        <Text style={styles.habitCue} testID="habit-cue">
+          {cue.message}
+        </Text>
+        <WeekStrip days={stats.completionDays} today={today} />
         {daily.limitReached ? (
           <Text style={styles.limitNote}>
             Limite diário atingido. Quests concluídas hoje não rendem mais XP — volte amanhã.
@@ -296,41 +398,74 @@ export function QuestLogScreen({
         </Pressable>
       ) : null}
 
-      <SectionList
-        sections={sections}
-        keyExtractor={(quest) => quest.id}
-        renderItem={renderQuest}
-        renderSectionHeader={({ section }) => (
-          <Text style={[styles.section, section.key === 'done' && styles.sectionSpaced]}>
-            {section.title}
+      {showReturn ? (
+        <Pressable
+          style={styles.feedbackBanner}
+          onPress={() => onPatchSettings({ dismissedReturnGap: stats.lastCompletedDate })}
+          accessibilityRole="button"
+          accessibilityLabel="Recomeço leve. Uma quest hoje abre um streak novo. Toque para dispensar."
+        >
+          <Text style={styles.feedbackText}>
+            Recomeço leve. Uma quest hoje abre um streak novo.
           </Text>
-        )}
+        </Pressable>
+      ) : null}
+
+      {canUndo ? (
+        <Pressable
+          style={styles.undoBanner}
+          onPress={onUndo}
+          accessibilityRole="button"
+          accessibilityLabel="Desfazer conclusão"
+          testID="undo-completion"
+        >
+          <Text style={styles.undoText}>Desfazer conclusão</Text>
+        </Pressable>
+      ) : null}
+
+      <QuestSections
+        quests={state.quests}
+        sections={sections}
+        listHeader={listHeader}
         renderSectionFooter={renderSectionFooter}
-        ListHeaderComponent={listHeader}
-        stickySectionHeadersEnabled={false}
-        contentContainerStyle={[styles.list, { paddingBottom: insets.bottom + 104 }]}
-        keyboardShouldPersistTaps="handled"
-        initialNumToRender={12}
-        windowSize={7}
+        onComplete={onCompleteQuest}
+        onDelete={onDeleteQuest}
+        onEdit={setEditingId}
+        onToggleRecurring={onToggleRecurring}
+        bottomInset={insets.bottom}
       />
 
-      <Pressable
-        style={({ pressed }) => [
-          styles.fab,
-          { bottom: insets.bottom + 24 },
-          pressed && styles.pressed,
-        ]}
+      <PressScale
+        style={[styles.fab, { bottom: insets.bottom + 24 }]}
         onPress={() => setModalOpen(true)}
         accessibilityRole="button"
         accessibilityLabel="Criar quest personalizada"
       >
         <Text style={styles.fabText}>+</Text>
-      </Pressable>
+      </PressScale>
 
       <QuestCreateModal
-        visible={modalOpen}
-        onClose={() => setModalOpen(false)}
-        onSubmit={onAddQuest}
+        visible={modalOpen || editing != null}
+        initial={
+          editing
+            ? {
+                title: editing.title,
+                category: editing.category,
+                difficulty: editing.difficulty,
+              }
+            : undefined
+        }
+        lockDifficulty={editing != null}
+        onClose={() => {
+          setModalOpen(false);
+          setEditingId(null);
+        }}
+        onSubmit={(input) => {
+          if (!editing) return onAddQuest(input);
+          const message = onEditQuest(editing.id, input.title, input.category);
+          if (!message) setEditingId(null);
+          return message;
+        }}
       />
 
       <HeroSheet
@@ -342,10 +477,102 @@ export function QuestLogScreen({
           setHeroOpen(false);
           onResetJourney();
         }}
+        onRename={onRename}
+        onChangeClass={onChangeClass}
+        onPatchSettings={onPatchSettings}
+        onToggleShield={onToggleShield}
+        onImportSave={onImportSave}
+        onExportSave={onExportSave}
+        onShareWeek={onShareWeek}
       />
     </View>
   );
 }
+
+function useLocalToday(): string {
+  const [today, setToday] = useState(() => localIsoDate(new Date()));
+  useEffect(() => {
+    const timer = setInterval(() => {
+      const next = localIsoDate(new Date());
+      setToday((current) => (current === next ? current : next));
+    }, 30_000);
+    return () => clearInterval(timer);
+  }, []);
+  return today;
+}
+
+/** A lista é o único lugar com relógio de 1s. O cabeçalho não re-renderiza com ele. */
+const QuestSections = memo(function QuestSections({
+  quests,
+  sections,
+  listHeader,
+  renderSectionFooter,
+  onComplete,
+  onDelete,
+  onEdit,
+  onToggleRecurring,
+  bottomInset,
+}: {
+  quests: readonly Quest[];
+  sections: QuestSection[];
+  listHeader: React.ReactElement;
+  renderSectionFooter: (info: { section: QuestSection }) => React.ReactElement | null;
+  onComplete: (questId: string) => void;
+  onDelete: (questId: string) => void;
+  onEdit: (questId: string) => void;
+  onToggleRecurring: (questId: string) => void;
+  bottomInset: number;
+}) {
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  const anyWaiting = useMemo(
+    () => quests.some((quest) => !quest.completed && msUntilXpEligible(quest, nowMs) > 0),
+    [quests, nowMs],
+  );
+
+  useEffect(() => {
+    if (!anyWaiting) return undefined;
+    const timer = setInterval(() => setNowMs(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [anyWaiting]);
+
+  const renderQuest = useCallback(
+    ({ item }: { item: Quest }) => {
+      const ticking = !item.completed && msUntilXpEligible(item, nowMs) > 0;
+      return (
+        <QuestRow
+          quest={item}
+          nowMs={ticking ? nowMs : 0}
+          onComplete={onComplete}
+          onDelete={onDelete}
+          onEdit={onEdit}
+          onToggleRecurring={onToggleRecurring}
+        />
+      );
+    },
+    [nowMs, onComplete, onDelete, onEdit, onToggleRecurring],
+  );
+
+  return (
+    <SectionList
+      style={styles.questList}
+      sections={sections}
+      keyExtractor={(quest) => quest.id}
+      renderItem={renderQuest}
+      renderSectionHeader={({ section }) => (
+        <Text style={[styles.section, section.key === 'done' && styles.sectionSpaced]}>
+          {section.title}
+        </Text>
+      )}
+      renderSectionFooter={renderSectionFooter}
+      ListHeaderComponent={listHeader}
+      stickySectionHeadersEnabled={false}
+      contentContainerStyle={[styles.list, { paddingBottom: bottomInset + 104 }]}
+      keyboardShouldPersistTaps="handled"
+      initialNumToRender={12}
+      windowSize={7}
+    />
+  );
+});
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.bg },
@@ -424,6 +651,8 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   statChipAlert: { color: colors.amberSoft, backgroundColor: colors.amberWash },
+  rankHint: { fontSize: 12, fontWeight: '600', color: colors.textMuted },
+  habitCue: { fontSize: 13, lineHeight: 18, color: colors.text },
   limitNote: { fontSize: 12, lineHeight: 17, color: colors.amberSoft },
   warningBanner: {
     marginHorizontal: 20,
@@ -449,6 +678,18 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   feedbackText: { color: colors.amberSoft, fontSize: 13, fontWeight: '600', lineHeight: 18 },
+  undoBanner: {
+    marginHorizontal: 20,
+    marginTop: 8,
+    minHeight: 44,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  undoText: { fontSize: 14, fontWeight: '800', color: colors.text },
+  questList: { flex: 1 },
   quickBlock: { paddingTop: 14, gap: 8 },
   filterBlock: { paddingTop: 12, paddingBottom: 4, gap: 8 },
   label: { fontSize: 13, fontWeight: '700', color: colors.textMuted },

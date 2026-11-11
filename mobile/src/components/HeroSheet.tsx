@@ -1,10 +1,29 @@
-import React from 'react';
-import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import React, { useState } from 'react';
+import {
+  Alert,
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import appConfig from '../../app.json';
 import { ATTRIBUTE_KEYS, ATTRIBUTE_LABELS, CLASS_DEFAULTS } from '../domain/constants';
+import { streakTitle } from '../domain/engagement';
 import { ACHIEVEMENTS, heroRankForLevel } from '../domain/progression';
-import type { AppState, AttributeKey } from '../domain/types';
+import { canArmStreakShield } from '../domain/rewards';
+import { cloudSyncStatus } from '../domain/state';
+import { localIsoDate } from '../domain/dates';
+import type {
+  AppState,
+  AttributeKey,
+  CharacterClass,
+  DailyGoalTarget,
+  PlayerSettings,
+} from '../domain/types';
 import { useReducedMotion } from '../platform/feedback';
 import { colors } from '../theme/colors';
 import { HeroAvatar } from './HeroAvatar';
@@ -16,6 +35,13 @@ export interface HeroSheetProps {
   onClose: () => void;
   onSpendAttributePoint: (attribute: AttributeKey) => void;
   onResetJourney: () => void;
+  onRename: (name: string) => string | null;
+  onChangeClass: (characterClass: CharacterClass) => void;
+  onPatchSettings: (partial: Partial<PlayerSettings>) => void;
+  onToggleShield: () => void;
+  onImportSave: (raw: string) => string | null;
+  onExportSave: () => void;
+  onShareWeek: () => void;
 }
 
 /**
@@ -28,7 +54,19 @@ export function HeroSheet({
   onClose,
   onSpendAttributePoint,
   onResetJourney,
+  onRename,
+  onChangeClass,
+  onPatchSettings,
+  onToggleShield,
+  onImportSave,
+  onExportSave,
+  onShareWeek,
 }: HeroSheetProps) {
+  const [nameDraft, setNameDraft] = useState(state.character.name);
+  const [importDraft, setImportDraft] = useState('');
+  const [formError, setFormError] = useState<string | null>(null);
+  const today = localIsoDate(new Date());
+  const shieldReady = canArmStreakShield(state.settings, today);
   const insets = useSafeAreaInsets();
   const reduceMotion = useReducedMotion();
   const { character, stats } = state;
@@ -51,6 +89,9 @@ export function HeroSheet({
     { label: 'XP total', value: String(stats.totalXpEarned) },
     { label: 'Quests concluídas', value: String(stats.totalQuestsCompleted) },
     { label: 'Streak atual', value: `${stats.streak}d` },
+    ...(streakTitle(stats.streak)
+      ? [{ label: 'Título do streak', value: streakTitle(stats.streak) as string }]
+      : []),
     { label: 'Melhor streak', value: `${stats.bestStreak}d` },
   ];
 
@@ -160,6 +201,132 @@ export function HeroSheet({
               );
             })}
           </View>
+
+          <Text style={styles.section}>Hábito</Text>
+          <Text style={styles.hint}>Meta do dia</Text>
+          <View style={styles.choiceRow}>
+            {([1, 2, 3] as DailyGoalTarget[]).map((target) => {
+              const selected = state.settings.dailyGoalTarget === target;
+              return (
+                <Pressable
+                  key={target}
+                  onPress={() => onPatchSettings({ dailyGoalTarget: target })}
+                  style={[styles.choice, selected && styles.choiceOn]}
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected }}
+                  accessibilityLabel={`Meta de ${target} ${target === 1 ? 'quest' : 'quests'}`}
+                >
+                  <Text style={styles.choiceText}>{target}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+          <Text style={styles.hint}>Lembrete local, um horário. Desligar é imediato.</Text>
+          <View style={styles.choiceRow}>
+            {[7, 8, 12, 18, 21].map((hour) => {
+              const selected = state.settings.reminder?.hour === hour;
+              return (
+                <Pressable
+                  key={hour}
+                  onPress={() => onPatchSettings({ reminder: { hour, minute: 0 } })}
+                  style={[styles.choice, selected && styles.choiceOn]}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Lembrete às ${hour} horas`}
+                >
+                  <Text style={styles.choiceText}>{hour}h</Text>
+                </Pressable>
+              );
+            })}
+            <Pressable
+              onPress={() => onPatchSettings({ reminder: null })}
+              style={styles.choice}
+              accessibilityRole="button"
+              accessibilityLabel="Desligar lembrete"
+            >
+              <Text style={styles.choiceText}>Off</Text>
+            </Pressable>
+          </View>
+          <Pressable
+            onPress={() => onPatchSettings({ soundEnabled: !state.settings.soundEnabled })}
+            style={styles.choice}
+            accessibilityRole="switch"
+            accessibilityState={{ checked: state.settings.soundEnabled }}
+          >
+            <Text style={styles.choiceText}>
+              Som de vitória {state.settings.soundEnabled ? 'ligado' : 'desligado'}
+            </Text>
+          </Pressable>
+          <Pressable
+            onPress={onToggleShield}
+            disabled={!shieldReady && !state.settings.streakShieldArmed}
+            style={styles.choice}
+            accessibilityRole="button"
+          >
+            <Text style={styles.choiceText}>
+              {state.settings.streakShieldArmed
+                ? 'Escudo armado'
+                : shieldReady
+                  ? 'Armar escudo do mês'
+                  : 'Escudo deste mês já usado'}
+            </Text>
+          </Pressable>
+          <Text style={styles.hint}>{cloudSyncStatus().message}</Text>
+          <Text style={styles.hint}>Avatar geométrico. O modelo 3D segue congelado.</Text>
+          <Text style={styles.label}>Nome</Text>
+          <TextInput
+            value={nameDraft}
+            onChangeText={setNameDraft}
+            style={styles.input}
+            maxLength={24}
+            accessibilityLabel="Novo nome do herói"
+          />
+          {formError ? <Text style={styles.error}>{formError}</Text> : null}
+          <Pressable
+            style={styles.choice}
+            onPress={() => {
+              const message = onRename(nameDraft);
+              setFormError(message);
+            }}
+            accessibilityRole="button"
+            accessibilityLabel="Salvar nome do herói"
+          >
+            <Text style={styles.choiceText}>Salvar nome</Text>
+          </Pressable>
+          <View style={styles.choiceRow}>
+            {(Object.keys(CLASS_DEFAULTS) as CharacterClass[]).map((key) => (
+              <Pressable
+                key={key}
+                onPress={() => onChangeClass(key)}
+                style={[styles.choice, state.character.characterClass === key && styles.choiceOn]}
+                accessibilityRole="radio"
+                accessibilityState={{ selected: state.character.characterClass === key }}
+              >
+                <Text style={styles.choiceText}>{CLASS_DEFAULTS[key].label}</Text>
+              </Pressable>
+            ))}
+          </View>
+          <Pressable style={styles.choice} onPress={onExportSave} accessibilityRole="button">
+            <Text style={styles.choiceText}>Exportar save</Text>
+          </Pressable>
+          <Pressable style={styles.choice} onPress={onShareWeek} accessibilityRole="button">
+            <Text style={styles.choiceText}>Copiar resumo da semana</Text>
+          </Pressable>
+          <TextInput
+            value={importDraft}
+            onChangeText={setImportDraft}
+            style={styles.input}
+            placeholder="Cole o JSON do save"
+            placeholderTextColor="#64748B"
+            accessibilityLabel="Importar save"
+          />
+          <Pressable
+            style={styles.choice}
+            onPress={() => setFormError(onImportSave(importDraft))}
+            accessibilityRole="button"
+            accessibilityLabel="Importar save colado"
+          >
+            <Text style={styles.choiceText}>Importar</Text>
+          </Pressable>
 
           <Pressable
             style={({ pressed }) => [styles.resetBtn, pressed && styles.pressed]}
@@ -284,5 +451,29 @@ const styles = StyleSheet.create({
   },
   resetBtnText: { fontSize: 15, fontWeight: '700', color: colors.danger },
   footer: { marginTop: 20, textAlign: 'center', fontSize: 12, color: colors.textDim },
+  choiceRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  choice: {
+    minHeight: 44,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.bgElevated,
+  },
+  choiceOn: { borderColor: colors.amber, backgroundColor: colors.amberWash },
+  choiceText: { fontSize: 13, fontWeight: '700', color: colors.text },
+  label: { marginTop: 8, fontSize: 13, fontWeight: '700', color: colors.textMuted },
+  input: {
+    minHeight: 48,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.bgElevated,
+    color: colors.text,
+    paddingHorizontal: 12,
+  },
+  error: { color: colors.danger, fontSize: 13, fontWeight: '600' },
   pressed: { opacity: 0.85, transform: [{ scale: 0.97 }] },
 });

@@ -1,3 +1,15 @@
+/* eslint-disable import/first, @typescript-eslint/no-require-imports */
+jest.mock('react-native-reanimated', () => {
+  const { View } = require('react-native');
+  return {
+    __esModule: true,
+    default: { View },
+    useSharedValue: (value: unknown) => ({ value }),
+    useAnimatedStyle: (updater: () => object) => updater(),
+    withTiming: (value: unknown) => value,
+  };
+});
+
 import { act, fireEvent, render, screen } from '@testing-library/react-native';
 import React from 'react';
 import { Alert, StyleSheet } from 'react-native';
@@ -99,9 +111,7 @@ describe('QuestLogApp — fluxo no aparelho', () => {
     // Validação do nome: erro explica onde e por quê.
     await screen.findByText('Crie seu herói');
     await fireEvent.press(screen.getByText('Começar jornada'));
-    expect(
-      screen.getByText('Dê um nome com pelo menos 2 letras para o seu herói.'),
-    ).toBeTruthy();
+    expect(screen.getByText('Dê um nome com pelo menos 2 letras para o seu herói.')).toBeTruthy();
 
     await completeOnboarding('Lucas');
     expect(screen.getByText('Lucas')).toBeTruthy();
@@ -110,9 +120,7 @@ describe('QuestLogApp — fluxo no aparelho', () => {
     expect(xpFillPercent()).toBe(0);
 
     // Quest por atalho: aparece com o contador do anti-farm.
-    await fireEvent.press(
-      screen.getByLabelText('Adicionar quest Estudar 25min, mais 25 de XP'),
-    );
+    await fireEvent.press(screen.getByLabelText('Adicionar quest Estudar 25min, mais 25 de XP'));
     expect(screen.getByText('Estudar 25min')).toBeTruthy();
     expect(screen.getByText('XP libera em 60s')).toBeTruthy();
 
@@ -164,6 +172,7 @@ describe('QuestLogApp — fluxo no aparelho', () => {
     expect(screen.getByText('0/100 XP')).toBeTruthy();
     expect(xpFillPercent()).toBe(0);
     expect(screen.getByText('XP hoje 0/10')).toBeTruthy();
+    expect(screen.getByText('Meta 1/1')).toBeTruthy();
     expect((await readSave(storage)).stats.totalXpEarned).toBe(0);
   });
 
@@ -181,6 +190,7 @@ describe('QuestLogApp — fluxo no aparelho', () => {
           xp: 50,
           completed: false,
           createdAt: new Date(2026, 10, 10, 8, 0, 0).toISOString(),
+          recurring: false,
         },
       ],
     };
@@ -250,6 +260,42 @@ describe('QuestLogApp — fluxo no aparelho', () => {
     await fireEvent.press(screen.getByLabelText('Registrar quest'));
     expect(screen.getByText('Ler 10 páginas')).toBeTruthy();
     expect(screen.queryByText('Registrar missão')).toBeNull();
+  });
+
+  it('pula o onboarding, fecha a meta do dia e desfaz a conclusão', async () => {
+    const storage = createMemoryStorage();
+    await render(<QuestLogApp store={createStateStore(storage)} />);
+
+    await screen.findByText('O hábito cabe num minuto');
+    await fireEvent.press(screen.getByLabelText('Pular e usar o herói padrão'));
+
+    expect(screen.getByText('Herói')).toBeTruthy();
+    expect(screen.getByText('Meta 0/1')).toBeTruthy();
+    expect(screen.getByText('Uma quest hoje abre sua jornada. Isso basta.')).toBeTruthy();
+    expect(screen.getByTestId('week-strip')).toBeTruthy();
+    expect(screen.getByText('A semana começa com a quest de hoje.')).toBeTruthy();
+    expect(screen.getByText('Mais 2 níveis para Aventureiro.')).toBeTruthy();
+
+    await fireEvent.press(screen.getByLabelText('Adicionar quest Beber água, mais 10 de XP'));
+    expect(screen.getByLabelText('Repetir a última quest Beber água')).toBeTruthy();
+
+    await advance(61_000);
+    await fireEvent.press(screen.getByLabelText('Concluir quest Beber água'));
+    expect(screen.getByText('Meta do dia cumprida. Amanhã basta uma quest.')).toBeTruthy();
+    expect(screen.getByText('Preguiça derrotada!')).toBeTruthy();
+
+    await fireEvent.press(screen.getByLabelText('Desfazer esta conclusão'));
+    expect(screen.queryByText('Preguiça derrotada!')).toBeNull();
+    expect(screen.getByText('Meta 0/1')).toBeTruthy();
+    expect(screen.getByText('0/100 XP')).toBeTruthy();
+    expect(screen.getByText('Conclusão desfeita. XP e streak voltaram.')).toBeTruthy();
+
+    await advance(10);
+    const saved = await readSave(storage);
+    expect(saved.character.name).toBe('Herói');
+    expect(saved.quests[0].completed).toBe(false);
+    expect(saved.stats.totalXpEarned).toBe(0);
+    expect(saved.stats.streak).toBe(0);
   });
 });
 

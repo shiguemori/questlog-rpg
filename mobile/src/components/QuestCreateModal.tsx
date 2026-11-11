@@ -24,6 +24,9 @@ export interface QuestCreateModalProps {
   onClose: () => void;
   /** Devolve a mensagem de erro (ex.: limite de quests abertas) ou null se registrou. */
   onSubmit: (input: NewQuestInput) => string | null;
+  initial?: { title: string; category: Category; difficulty: Difficulty };
+  /** Edição não deixa trocar a dificuldade — isso mudaria o XP. */
+  lockDifficulty?: boolean;
 }
 
 const DIFFICULTIES: Difficulty[] = ['EASY', 'MEDIUM', 'HARD'];
@@ -34,7 +37,13 @@ const EASE_OUT = Easing.bezier(0.23, 1, 0.32, 1);
  * Entrada: opacity + scale 0.95→1 em 220ms ease-out (só opacity com "reduzir movimento").
  * O formulário sobe junto com o teclado e o erro aparece embaixo do campo.
  */
-export function QuestCreateModal({ visible, onClose, onSubmit }: QuestCreateModalProps) {
+export function QuestCreateModal({
+  visible,
+  onClose,
+  onSubmit,
+  initial,
+  lockDifficulty,
+}: QuestCreateModalProps) {
   return (
     <Modal
       visible={visible}
@@ -43,7 +52,13 @@ export function QuestCreateModal({ visible, onClose, onSubmit }: QuestCreateModa
       onRequestClose={onClose}
       statusBarTranslucent
     >
-      <QuestCreateSheet onClose={onClose} onSubmit={onSubmit} />
+      <QuestCreateSheet
+        key={initial ? `edit-${initial.title}` : 'create'}
+        onClose={onClose}
+        onSubmit={onSubmit}
+        initial={initial}
+        lockDifficulty={lockDifficulty}
+      />
     </Modal>
   );
 }
@@ -52,12 +67,17 @@ export function QuestCreateModal({ visible, onClose, onSubmit }: QuestCreateModa
  * Conteúdo do modal. Só existe enquanto o modal está aberto, então o
  * formulário sempre começa limpo e a entrada roda uma vez, na montagem.
  */
-function QuestCreateSheet({ onClose, onSubmit }: Omit<QuestCreateModalProps, 'visible'>) {
+function QuestCreateSheet({
+  onClose,
+  onSubmit,
+  initial,
+  lockDifficulty,
+}: Omit<QuestCreateModalProps, 'visible'>) {
   const insets = useSafeAreaInsets();
   const reduceMotion = useReducedMotion();
-  const [title, setTitle] = useState('');
-  const [difficulty, setDifficulty] = useState<Difficulty>('MEDIUM');
-  const [category, setCategory] = useState<Category>('OTHER');
+  const [title, setTitle] = useState(initial?.title ?? '');
+  const [difficulty, setDifficulty] = useState<Difficulty>(initial?.difficulty ?? 'MEDIUM');
+  const [category, setCategory] = useState<Category>(initial?.category ?? 'OTHER');
   const [error, setError] = useState<string | null>(null);
   const opacity = useAnimatedValue(0);
   const scale = useAnimatedValue(0.95);
@@ -115,8 +135,8 @@ function QuestCreateSheet({ onClose, onSubmit }: Omit<QuestCreateModalProps, 'vi
         style={[styles.sheet, { opacity, transform: [{ scale }] }]}
         accessibilityViewIsModal
       >
-        <Text style={styles.eyebrow}>Nova quest</Text>
-        <Text style={styles.title}>Registrar missão</Text>
+        <Text style={styles.eyebrow}>{lockDifficulty ? 'Editar quest' : 'Nova quest'}</Text>
+        <Text style={styles.title}>{lockDifficulty ? 'Ajustar missão' : 'Registrar missão'}</Text>
 
         <View style={styles.labelRow}>
           <Text style={styles.label}>Título</Text>
@@ -169,10 +189,21 @@ function QuestCreateSheet({ onClose, onSubmit }: Omit<QuestCreateModalProps, 'vi
             return (
               <Pressable
                 key={d}
-                onPress={() => setDifficulty(d)}
-                style={[styles.chip, selected && styles.chipSelected]}
+                onPress={() => {
+                  if (!lockDifficulty) setDifficulty(d);
+                }}
+                disabled={lockDifficulty}
+                style={[
+                  styles.chip,
+                  selected && styles.chipSelected,
+                  lockDifficulty && styles.locked,
+                ]}
                 accessibilityRole="radio"
-                accessibilityState={{ selected, checked: selected }}
+                accessibilityState={{
+                  selected,
+                  checked: selected,
+                  disabled: lockDifficulty === true,
+                }}
                 accessibilityLabel={`${DIFFICULTY_LABELS[d]}, mais ${XP_REWARDS[d]} de XP`}
               >
                 <Text style={[styles.chipText, selected && styles.chipTextSelected]}>
@@ -269,6 +300,7 @@ const styles = StyleSheet.create({
   },
   chipText: { fontSize: 13, color: colors.textMuted, fontWeight: '600' },
   chipTextSelected: { color: colors.amberSoft },
+  locked: { opacity: 0.55 },
   actions: {
     flexDirection: 'row',
     gap: 10,

@@ -1,4 +1,5 @@
 import { CATEGORIES, CLASS_DEFAULTS, INITIAL_MAX_XP, XP_REWARDS } from './constants';
+import { backfillCompletionDays, COMPLETION_DAY_CAP } from './engagement';
 import type {
   AppState,
   Attributes,
@@ -6,13 +7,28 @@ import type {
   Character,
   CharacterClass,
   Difficulty,
+  PlayerSettings,
   Quest,
   UserStats,
 } from './types';
+import { clampDailyGoalTarget } from './rewards';
 import { applyXp, maxXpForLevel } from './xp';
 
 export const HERO_NAME_MAX_LENGTH = 24;
+export const HERO_NAME_MIN_LENGTH = 2;
 export const DEFAULT_HERO_NAME = 'Herói';
+
+export function defaultPlayerSettings(): PlayerSettings {
+  return {
+    dailyGoalTarget: 1,
+    reminder: null,
+    soundEnabled: false,
+    dismissedSuggestionDate: null,
+    dismissedReturnGap: null,
+    streakShieldArmed: false,
+    streakShieldUsedOn: null,
+  };
+}
 
 const DIFFICULTIES: Difficulty[] = ['EASY', 'MEDIUM', 'HARD'];
 const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
@@ -39,7 +55,11 @@ export function createInitialState(): AppState {
       totalQuestsCompleted: 0,
       dailyXpCompletions: 0,
       dailyXpCompletionsDate: null,
+      dailyCompletions: 0,
+      dailyCompletionsDate: null,
+      completionDays: [],
     },
+    settings: defaultPlayerSettings(),
   };
 }
 
@@ -76,8 +96,7 @@ function sanitizeCharacter(raw: unknown): Character {
     typeof raw.characterClass === 'string' && raw.characterClass in CLASS_DEFAULTS
       ? (raw.characterClass as CharacterClass)
       : base.characterClass;
-  const name =
-    typeof raw.name === 'string' ? raw.name.trim().slice(0, HERO_NAME_MAX_LENGTH) : '';
+  const name = typeof raw.name === 'string' ? raw.name.trim().slice(0, HERO_NAME_MAX_LENGTH) : '';
   const level = Math.max(1, toCount(raw.level, 1));
   const rawMaxXp = toCount(raw.maxXp, 0);
   const maxXp = rawMaxXp >= 1 ? rawMaxXp : maxXpForLevel(level);
@@ -120,6 +139,7 @@ function sanitizeQuest(raw: unknown): Quest | null {
     xp: XP_REWARDS[difficulty],
     completed: raw.completed === true,
     createdAt,
+    recurring: raw.recurring === true,
   };
   if (typeof raw.completedAt === 'string' && !Number.isNaN(Date.parse(raw.completedAt))) {
     quest.completedAt = raw.completedAt;
@@ -140,19 +160,57 @@ function sanitizeQuests(raw: unknown): Quest[] {
   return quests;
 }
 
+function sanitizeCompletionDays(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  const days = new Set<string>();
+  for (const entry of raw) {
+    if (typeof entry === 'string' && ISO_DAY.test(entry)) days.add(entry);
+  }
+  return [...days].sort().slice(-COMPLETION_DAY_CAP);
+}
+
+function sanitizeReminder(raw: unknown): PlayerSettings['reminder'] {
+  if (!isRecord(raw)) return null;
+  const hour = toCount(raw.hour, -1);
+  const minute = toCount(raw.minute, -1);
+  if (hour > 23 || minute > 59) return null;
+  return { hour, minute };
+}
+
+function sanitizeSettings(raw: unknown): PlayerSettings {
+  const base = defaultPlayerSettings();
+  if (!isRecord(raw)) return base;
+  return {
+    dailyGoalTarget: clampDailyGoalTarget(raw.dailyGoalTarget),
+    reminder: sanitizeReminder(raw.reminder),
+    soundEnabled: raw.soundEnabled === true,
+    dismissedSuggestionDate: toIsoDay(raw.dismissedSuggestionDate),
+    dismissedReturnGap: toIsoDay(raw.dismissedReturnGap),
+    streakShieldArmed: raw.streakShieldArmed === true,
+    streakShieldUsedOn: toIsoDay(raw.streakShieldUsedOn),
+  };
+}
+
 function sanitizeStats(raw: unknown): UserStats {
   const base = createInitialState().stats;
   if (!isRecord(raw)) return base;
   const streak = toCount(raw.streak, 0);
+  const lastCompletedDate = toIsoDay(raw.lastCompletedDate);
   const dailyXpCompletionsDate = toIsoDay(raw.dailyXpCompletionsDate);
+  const dailyCompletionsDate = toIsoDay(raw.dailyCompletionsDate);
+  const storedDays = sanitizeCompletionDays(raw.completionDays);
   return {
     streak,
     bestStreak: Math.max(streak, toCount(raw.bestStreak, 0)),
-    lastCompletedDate: toIsoDay(raw.lastCompletedDate),
+    lastCompletedDate,
     totalXpEarned: toCount(raw.totalXpEarned, 0),
     totalQuestsCompleted: toCount(raw.totalQuestsCompleted, 0),
     dailyXpCompletions: dailyXpCompletionsDate ? toCount(raw.dailyXpCompletions, 0) : 0,
     dailyXpCompletionsDate,
+    dailyCompletions: dailyCompletionsDate ? toCount(raw.dailyCompletions, 0) : 0,
+    dailyCompletionsDate,
+    completionDays:
+      storedDays.length > 0 ? storedDays : backfillCompletionDays(lastCompletedDate, streak),
   };
 }
 
@@ -173,6 +231,60 @@ export function sanitizeState(raw: unknown): AppState | null {
         : character,
     quests: sanitizeQuests(raw.quests),
     stats: sanitizeStats(raw.stats),
+    settings: sanitizeSettings(raw.settings),
+  };
+}
+
+export type HeroUpdateResult = { ok: true; state: AppState } | { ok: false; message: string };
+
+/** Renomeia e/ou troca a classe. Atributos já gastos permanecem. */
+export function updateHero(
+  state: AppState,
+  input: { name?: string; characterClass?: CharacterClass },
+): HeroUpdateResult {
+  let character = state.character;
+  if (input.name != null) {
+    const name = input.name.trim().replace(/\s+/g, ' ').slice(0, HERO_NAME_MAX_LENGTH);
+    if (name.length < HERO_NAME_MIN_LENGTH) {
+      return {
+        ok: false,
+        message: `O nome precisa de pelo menos ${HERO_NAME_MIN_LENGTH} letras.`,
+      };
+    }
+    character = { ...character, name };
+  }
+  if (input.characterClass != null) {
+    if (!(input.characterClass in CLASS_DEFAULTS)) {
+      return { ok: false, message: 'Escolha Guerreiro, Mago ou Ladino.' };
+    }
+    character = { ...character, characterClass: input.characterClass };
+  }
+  return { ok: true, state: { ...state, character } };
+}
+
+export function exportSaveJson(state: AppState): string {
+  return JSON.stringify(state);
+}
+
+export function importSaveJson(
+  raw: string,
+): { ok: true; state: AppState } | { ok: false; message: string } {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return { ok: false, message: 'Esse texto não é um save do QuestLog.' };
+  }
+  const state = sanitizeState(parsed);
+  if (!state) return { ok: false, message: 'Não reconhecemos esse save.' };
+  return { ok: true, state };
+}
+
+/** Nuvem fica fora do MVP. O backup real é exportar o save. */
+export function cloudSyncStatus(): { mode: 'LOCAL_ONLY'; message: string } {
+  return {
+    mode: 'LOCAL_ONLY',
+    message: 'Seu progresso fica neste aparelho. A conta na nuvem ainda não faz parte do jogo.',
   };
 }
 

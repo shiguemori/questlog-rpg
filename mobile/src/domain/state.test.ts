@@ -4,6 +4,7 @@ import { CLASS_DEFAULTS } from './constants';
 import {
   ACHIEVEMENTS,
   heroRankForLevel,
+  nextRankHint,
   newlyUnlockedAchievements,
   spendAttributePoint,
   unlockedAchievementIds,
@@ -54,6 +55,7 @@ describe('sanitizeState', () => {
           completed: true,
           createdAt: '2026-11-11T10:00:00.000Z',
           completedAt: '2026-11-11T10:05:00.000Z',
+          recurring: false,
         },
       ],
       stats: {
@@ -64,6 +66,9 @@ describe('sanitizeState', () => {
         totalQuestsCompleted: 1,
         dailyXpCompletions: 1,
         dailyXpCompletionsDate: '2026-11-11',
+        dailyCompletions: 1,
+        dailyCompletionsDate: '2026-11-11',
+        completionDays: ['2026-11-10', '2026-11-11'],
       },
     };
     assert.deepEqual(sanitizeState(JSON.parse(JSON.stringify(saved))), saved);
@@ -91,6 +96,8 @@ describe('sanitizeState', () => {
     assert.equal(state.stats.bestStreak, 3);
     assert.equal(state.stats.totalQuestsCompleted, 0);
     assert.equal(state.stats.dailyXpCompletions, 0);
+    assert.equal(state.stats.dailyCompletions, 0);
+    assert.deepEqual(state.stats.completionDays, ['2026-11-08', '2026-11-09', '2026-11-10']);
     assert.deepEqual(state.character.attributes, CLASS_DEFAULTS.ROGUE.attributes);
     assert.equal(state.character.attributePoints, 0);
     assert.equal(state.quests[0].completedAt, undefined);
@@ -127,12 +134,26 @@ describe('sanitizeState', () => {
       onboardingDone: true,
       character: { name: 'Lucas' },
       quests: [
-        { id: 'a', title: 'Ok', category: 'WORK', difficulty: 'HARD', xp: 99999, completed: false, createdAt: '2026-11-11T10:00:00.000Z' },
+        {
+          id: 'a',
+          title: 'Ok',
+          category: 'WORK',
+          difficulty: 'HARD',
+          xp: 99999,
+          completed: false,
+          createdAt: '2026-11-11T10:00:00.000Z',
+        },
         { id: 'a', title: 'Duplicada', category: 'WORK', difficulty: 'EASY', xp: 10 },
         { id: '', title: 'Sem id' },
         { id: 'b', title: '   ' },
         'lixo',
-        { id: 'c', title: 'Campos tortos', category: 'MAGIA', difficulty: 'IMPOSSIBLE', createdAt: 'ontem' },
+        {
+          id: 'c',
+          title: 'Campos tortos',
+          category: 'MAGIA',
+          difficulty: 'IMPOSSIBLE',
+          createdAt: 'ontem',
+        },
       ],
     });
     assert.ok(state);
@@ -184,6 +205,13 @@ describe('heroRankForLevel', () => {
     assert.equal(heroRankForLevel(6), 'Veterano');
     assert.equal(heroRankForLevel(10), 'Campeão');
     assert.equal(heroRankForLevel(15), 'Lenda');
+    assert.equal(heroRankForLevel(16), 'Lenda');
+  });
+
+  it('diz quantos níveis faltam para o próximo título', () => {
+    assert.equal(nextRankHint(1), 'Mais 2 níveis para Aventureiro.');
+    assert.equal(nextRankHint(2), 'Mais 1 nível para Aventureiro.');
+    assert.equal(nextRankHint(15), 'Você é Lenda. O hábito é a recompensa.');
   });
 });
 

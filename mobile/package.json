@@ -5,10 +5,13 @@
   "dependencies": {
     "@react-native-async-storage/async-storage": "2.2.0",
     "expo": "~58.0.24",
+    "expo-audio": "~58.0.12",
     "expo-haptics": "~58.0.7",
+    "expo-notifications": "~58.1.9",
     "expo-status-bar": "~58.0.5",
     "react": "19.3.0",
     "react-native": "0.88.1",
+    "react-native-reanimated": "4.7.1",
     "react-native-safe-area-context": "~5.11.1"
   },
   "devDependencies": {
@@ -17,10 +20,12 @@
     "@types/jest": "30.0.0",
     "@types/node": "^22.20.5",
     "@types/react": "~19.3.0",
+    "c8": "^12.0.0",
     "eslint": "^9.39.5",
     "eslint-config-expo": "~58.0.4",
     "jest": "~30.5.2",
     "jest-expo": "~58.0.14",
+    "prettier": "^3.10.0",
     "tsx": "^4.23.15",
     "typescript": "~6.0.3"
   },
@@ -31,6 +36,8 @@
     "web": "expo start --web",
     "typecheck": "tsc --noEmit",
     "lint": "eslint . --max-warnings 0",
+    "format:check": "prettier --check \"src/**/*.{ts,tsx}\" App.tsx",
+    "test:coverage": "c8 --reporter=text --include=src/domain/**/*.ts --exclude=**/*.test.ts --check-coverage --lines 90 -- tsx --test src/domain/**/*.test.ts src/integration/**/*.test.ts",
     "test": "npm run test:domain && npm run test:ui",
     "test:domain": "tsx --test \"src/**/*.test.ts\"",
     "test:ui": "jest"

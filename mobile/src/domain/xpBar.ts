@@ -32,10 +32,7 @@ export interface XpBarSegment {
  *   (a barra nunca "anda para trás" ao ganhar XP).
  * - Nível menor (reinício da jornada): salto direto, sem animação intermediária.
  */
-export function planXpBarAnimation(
-  previous: XpBarSnapshot,
-  next: XpBarSnapshot,
-): XpBarSegment[] {
+export function planXpBarAnimation(previous: XpBarSnapshot, next: XpBarSnapshot): XpBarSegment[] {
   if (next.level > previous.level) {
     return [
       { from: previous.ratio, to: 1 },

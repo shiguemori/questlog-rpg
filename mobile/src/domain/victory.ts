@@ -29,6 +29,8 @@ export interface QuestVictoryEvent {
   leveledUp: boolean;
   newLevel: number | null;
   villain: Villain;
+  /** Linha curta de hábito. A cena continua igual quando é null. */
+  habitLine: string | null;
 }
 
 export function buildVictoryEvent(input: {
@@ -39,6 +41,7 @@ export function buildVictoryEvent(input: {
   newLevel: number | null;
   /** Categoria da quest — escolhe o vilão. Padrão: OTHER (Sombra). */
   category?: Category;
+  habitLine?: string | null;
 }): QuestVictoryEvent {
   const outcome: QuestVictoryOutcome =
     input.xpAwarded > 0 && input.denyReason == null ? 'VICTORY' : 'BLOCKED';
@@ -51,5 +54,6 @@ export function buildVictoryEvent(input: {
     denyReason: input.denyReason,
     leveledUp: input.leveledUp,
     newLevel: input.newLevel,
+    habitLine: input.habitLine ?? null,
   };
 }

@@ -21,11 +21,7 @@ const CLASS_ACCENT: Record<CharacterClass, string> = {
  * Placeholder estilizado da classe (Blender congelado).
  * View geométrica — sem asset externo.
  */
-export function HeroAvatar({
-  characterClass,
-  size = 72,
-  initial,
-}: HeroAvatarProps) {
+export function HeroAvatar({ characterClass, size = 72, initial }: HeroAvatarProps) {
   const accent = CLASS_ACCENT[characterClass];
   const label = CLASS_DEFAULTS[characterClass].label;
   const letter = (initial?.trim() || label).charAt(0).toUpperCase();
@@ -59,9 +55,7 @@ export function HeroAvatar({
         ]}
       >
         <View style={[styles.crest, { backgroundColor: accent, opacity: 0.35 }]} />
-        <Text style={[styles.letter, { fontSize: size * 0.34, color: accent }]}>
-          {letter}
-        </Text>
+        <Text style={[styles.letter, { fontSize: size * 0.34, color: accent }]}>{letter}</Text>
         <View style={[styles.badge, { backgroundColor: accent }]}>
           <Text style={styles.badgeText}>{label.slice(0, 1)}</Text>
         </View>

@@ -13,6 +13,8 @@ export interface Quest {
   createdAt: string;
   /** ISO 8601 do momento da conclusão. Ausente em saves antigos. */
   completedAt?: string;
+  /** Hábito fixo: reabre no dia seguinte. O anti-farm vale de novo. */
+  recurring: boolean;
 }
 
 export interface Attributes {
@@ -46,6 +48,35 @@ export interface UserStats {
   dailyXpCompletions: number;
   /** Dia civil (YYYY-MM-DD) da contagem anti-farm diária. */
   dailyXpCompletionsDate: string | null;
+  /**
+   * Quests concluídas hoje (com ou sem XP). A meta diária usa isto.
+   * O anti-farm continua só em `dailyXpCompletions`.
+   */
+  dailyCompletions: number;
+  /** Dia civil (YYYY-MM-DD) de `dailyCompletions`. */
+  dailyCompletionsDate: string | null;
+  /** Dias civis com pelo menos uma conclusão. Teto 120, do mais antigo ao mais novo. */
+  completionDays: string[];
+}
+
+export type DailyGoalTarget = 1 | 2 | 3;
+
+export interface ReminderTime {
+  hour: number;
+  minute: number;
+}
+
+/** Preferências locais. Não dão XP e não furam o anti-farm. */
+export interface PlayerSettings {
+  dailyGoalTarget: DailyGoalTarget;
+  reminder: ReminderTime | null;
+  soundEnabled: boolean;
+  dismissedSuggestionDate: string | null;
+  /** `lastCompletedDate` para o qual a tela de retorno já foi dispensada. */
+  dismissedReturnGap: string | null;
+  streakShieldArmed: boolean;
+  /** Dia em que o escudo foi gasto. No máximo um por mês. */
+  streakShieldUsedOn: string | null;
 }
 
 export interface AppState {
@@ -53,4 +84,5 @@ export interface AppState {
   character: Character;
   quests: Quest[];
   stats: UserStats;
+  settings: PlayerSettings;
 }

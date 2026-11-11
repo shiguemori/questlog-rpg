@@ -1,4 +1,5 @@
-import { XP_REWARDS } from './constants';
+import { CATEGORIES, XP_REWARDS } from './constants';
+import { localIsoDate } from './dates';
 import type { AppState, Category, Difficulty, Quest } from './types';
 
 export const QUEST_TITLE_MIN_LENGTH = 2;
@@ -15,8 +16,7 @@ export const QUEST_TITLE_ERROR_COPY: Record<QuestTitleError, string> = {
 };
 
 export type QuestTitleValidation =
-  | { ok: true; title: string }
-  | { ok: false; error: QuestTitleError; message: string };
+  { ok: true; title: string } | { ok: false; error: QuestTitleError; message: string };
 
 /** Remove espaços das pontas e colapsa espaços repetidos. */
 export function normalizeQuestTitle(raw: string): string {
@@ -40,6 +40,7 @@ export interface NewQuestInput {
   title: string;
   difficulty: Difficulty;
   category: Category;
+  recurring?: boolean;
 }
 
 export type AddQuestError = QuestTitleError | 'TOO_MANY_OPEN';
@@ -89,6 +90,7 @@ export function addQuest(
     xp: XP_REWARDS[input.difficulty],
     completed: false,
     createdAt: now.toISOString(),
+    recurring: input.recurring === true,
   };
 
   return { ok: true, quest, state: { ...state, quests: [quest, ...state.quests] } };
@@ -101,6 +103,69 @@ export function addQuest(
 export function deleteQuest(state: AppState, questId: string): AppState {
   if (!state.quests.some((q) => q.id === questId)) return state;
   return { ...state, quests: state.quests.filter((q) => q.id !== questId) };
+}
+
+export type EditQuestResult = { ok: true; state: AppState } | { ok: false; message: string };
+
+/**
+ * Troca título e categoria. Dificuldade e `createdAt` ficam — senão dava para
+ * reescrever o XP ou zerar o anti-farm.
+ */
+export function editQuest(
+  state: AppState,
+  questId: string,
+  input: { title: string; category: Category },
+): EditQuestResult {
+  const quest = state.quests.find((item) => item.id === questId);
+  if (!quest) return { ok: false, message: 'Não encontramos essa quest.' };
+  if (quest.completed) return { ok: false, message: 'Quest concluída não se edita.' };
+  const validation = validateQuestTitle(input.title);
+  if (!validation.ok) return { ok: false, message: validation.message };
+  if (!CATEGORIES.includes(input.category)) {
+    return { ok: false, message: 'Escolha uma categoria.' };
+  }
+  return {
+    ok: true,
+    state: {
+      ...state,
+      quests: state.quests.map((item) =>
+        item.id === questId
+          ? {
+              ...item,
+              title: validation.title,
+              category: input.category,
+              xp: XP_REWARDS[item.difficulty],
+            }
+          : item,
+      ),
+    },
+  };
+}
+
+export function setQuestRecurring(state: AppState, questId: string, recurring: boolean): AppState {
+  if (!state.quests.some((item) => item.id === questId)) return state;
+  return {
+    ...state,
+    quests: state.quests.map((item) => (item.id === questId ? { ...item, recurring } : item)),
+  };
+}
+
+/**
+ * Quest diária concluída em um dia anterior volta a ficar aberta.
+ * `createdAt` vira agora: o minuto do anti-farm conta de novo.
+ */
+export function reopenDueRecurring(state: AppState, now: Date = new Date()): AppState {
+  const today = localIsoDate(now);
+  let changed = false;
+  const quests = state.quests.map((quest) => {
+    if (!quest.recurring || !quest.completed || !quest.completedAt) return quest;
+    const doneOn = localIsoDate(new Date(quest.completedAt));
+    if (doneOn >= today) return quest;
+    changed = true;
+    const { completedAt: _ignored, ...rest } = quest;
+    return { ...rest, completed: false, createdAt: now.toISOString(), recurring: true };
+  });
+  return changed ? { ...state, quests } : state;
 }
 
 /** Limpa o histórico de concluídas. Estatísticas permanecem. */

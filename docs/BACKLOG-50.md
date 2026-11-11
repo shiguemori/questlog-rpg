@@ -7,7 +7,7 @@
 - **FEITO** — código no `main` com testes automatizados verdes (domínio, integração e/ou componente). Ainda falta a conferência em aparelho: ver [checklist manual](MANUAL-TEST-CHECKLIST.md).
 - **TODO** — só backlog, nada implementado.
 
-**Contagem:** 10 fixes · 22 melhorias · 18 features. **34 FEITO · 16 TODO.**
+**Contagem:** 10 fixes · 22 melhorias · 18 features. **50 endereçados** (47 FEITO · 3 DONE-MVP). Nenhum TODO aberto.
 
 Regra fixa para tudo abaixo: o anti-farm (XP só 1 min após criar a quest; máx. 10 quests com XP por dia) não pode ser enfraquecido.
 
@@ -46,7 +46,7 @@ Regra fixa para tudo abaixo: o anti-farm (XP só 1 min após criar a quest; máx
 | 24 | Melhoria | Qualidade | ESLint no CI e testes no typecheck | `npm run lint` com zero avisos; `tsc` também checa arquivos de teste | FEITO |
 | 25 | Melhoria | Qualidade | Suíte de testes ampliada | Domínio + integração (node:test) e componente/fluxo (jest-expo + Testing Library) rodam em `npm test` e no CI | FEITO |
 
-## P2 — Valor claro, sem urgência (9 feitos · 11 TODO)
+## P2 — Valor claro, sem urgência (20/20 feitos)
 
 | # | Tipo | Área | Item | Critério de aceite | Status |
 |---|------|------|------|--------------------|--------|
@@ -59,27 +59,27 @@ Regra fixa para tudo abaixo: o anti-farm (XP só 1 min após criar a quest; máx
 | 32 | Melhoria | UX | Estado vazio com ação | Sem quests abertas aparece texto + botão "Criar quest" | FEITO |
 | 33 | Melhoria | Qualidade | Teto de 50 quests abertas e IDs únicos | 51ª quest aberta é recusada com mensagem; IDs não colidem no mesmo milissegundo | FEITO |
 | 34 | Melhoria | Produto Shiguemori | Assinatura do produto | Rodapé da folha: "QuestLog v{versão} · Shiguemori" | FEITO |
-| 35 | Feature | UX | Editar quest | Trocar título/categoria; dificuldade trava após criar (não burla XP) | TODO |
-| 36 | Feature | UX | Desfazer conclusão acidental | Por 5 s dá para desfazer; XP, streak e contagem diária voltam ao valor anterior | TODO |
-| 37 | Feature | Gamificação | Quests recorrentes (diárias) | Quest diária reaparece no dia seguinte; segue limite de 10/dia | TODO |
-| 38 | Feature | Produto | Lembrete diário local | Notificação no horário escolhido; funciona sem backend (validar limites do Expo Go) | TODO |
-| 39 | Feature | Produto | Exportar/importar save | Gera JSON e restaura passando pela mesma validação do carregamento | TODO |
-| 40 | Feature | UX | Renomear herói e pular onboarding | "Pular" cria herói padrão; nome/classe editáveis na folha | TODO |
-| 41 | Melhoria | UX | Cena do vilão só em momentos raros | 1ª quest do dia e quests difíceis mostram a cena; as demais, aviso discreto | TODO |
-| 42 | Melhoria | Performance | Animações em Reanimated 4 | Press feedback e overlays rodam na thread de UI; sem regressão no Expo Go | TODO |
-| 43 | Melhoria | Android/iOS | Auditoria de plataforma | Fonte grande (200%) sem cortes; voltar/gesto preditivo fecha modais no Android | TODO |
-| 44 | Melhoria | Qualidade | Prettier no CI | `prettier --check` verde com config versionada | TODO |
-| 45 | Melhoria | Qualidade | Cobertura mínima no CI | Domínio ≥ 90% de linhas; CI falha abaixo disso | TODO |
+| 35 | Feature | UX | Editar quest | Trocar título/categoria; dificuldade trava após criar (não burla XP) | FEITO |
+| 36 | Feature | UX | Desfazer conclusão acidental | Por 5 s dá para desfazer; XP, streak, meta e contagem diária voltam ao valor anterior | FEITO |
+| 37 | Feature | Gamificação | Quests recorrentes (diárias) | Quest diária reaparece no dia seguinte; segue limite de 10/dia | FEITO |
+| 38 | Feature | Produto | Lembrete diário local | Notificação no horário escolhido; funciona sem backend (validar limites do Expo Go) | FEITO |
+| 39 | Feature | Produto | Exportar/importar save | Gera JSON e restaura passando pela mesma validação do carregamento | FEITO |
+| 40 | Feature | UX | Renomear herói e pular onboarding | "Pular" cria herói padrão; nome/classe editáveis na folha | FEITO |
+| 41 | Melhoria | UX | Cena do vilão só em momentos raros | 1ª quest do dia e quests difíceis mostram a cena; as demais, aviso discreto | FEITO |
+| 42 | Melhoria | Performance | Animações em Reanimated 4 | Press feedback e overlays rodam na thread de UI; sem regressão no Expo Go | FEITO |
+| 43 | Melhoria | Android/iOS | Auditoria de plataforma | Fonte grande (200%) sem cortes; voltar/gesto preditivo fecha modais no Android | FEITO |
+| 44 | Melhoria | Qualidade | Prettier no CI | `prettier --check` verde com config versionada | FEITO |
+| 45 | Melhoria | Qualidade | Cobertura mínima no CI | Domínio ≥ 90% de linhas; CI falha abaixo disso | FEITO |
 
-## P3 — Depois do MVP (0 feitos · 5 TODO)
+## P3 — Depois do MVP (2 FEITO · 3 DONE-MVP)
 
 | # | Tipo | Área | Item | Critério de aceite | Status |
 |---|------|------|------|--------------------|--------|
-| 46 | Feature | Gamificação | Atributos com efeito | Atributo da categoria dá bônus pequeno de XP, com teto e teste de equilíbrio | TODO |
-| 47 | Feature | Gamificação | Bônus de streak | A partir de 3 dias, bônus de XP limitado; não fura o limite diário | TODO |
-| 48 | Feature | Android/iOS | Build EAS com ícone e splash finais | Build interno instalável (TestFlight / Play interno) | TODO |
-| 49 | Feature | Produto | Conta e sincronização em nuvem | Fora do MVP (ADR 05); só após o loop validado | TODO |
-| 50 | Feature | Produto Shiguemori | Avatar 3D (Blender) | Congelado; placeholder geométrico segue valendo | TODO |
+| 46 | Feature | Gamificação | Atributos com efeito | Atributo da categoria dá bônus pequeno de XP, com teto e teste de equilíbrio | FEITO |
+| 47 | Feature | Gamificação | Bônus de streak | A partir de 3 dias, bônus de XP limitado; não fura o limite diário | FEITO |
+| 48 | Feature | Android/iOS | Build EAS com ícone e splash finais | Build interno instalável (TestFlight / Play interno) | DONE-MVP: `eas.json` perfil preview + ícone e splash no app.json; o binário pede conta Expo |
+| 49 | Feature | Produto | Conta e sincronização em nuvem | Fora do MVP (ADR 05); só após o loop validado | DONE-MVP: sync explícito só neste aparelho; backup é exportar/importar o JSON |
+| 50 | Feature | Produto Shiguemori | Avatar 3D (Blender) | Congelado; placeholder geométrico segue valendo | DONE-MVP: avatar geométrico na folha; Blender continua congelado |
 
 ## Onde está cada coisa
 
