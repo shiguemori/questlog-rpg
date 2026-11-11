@@ -1,20 +1,38 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# QuestLog (`questlog-rpg`)
 
-# Run and deploy your AI Studio app
+App mobile Shiguemori que transforma tarefas reais em quests de RPG. Display name: **QuestLog**. Repo: **questlog-rpg**.
 
-This contains everything you need to run your app locally.
+## Loop MVP
 
-View your app in AI Studio: https://ai.studio/apps/drive/12L80j1YgJkulvlHN10Zor76SRuCc5pqe
+Onboarding (nome + classe) → registrar quest → concluir → XP / streak.
 
-## Run Locally
+Critério de pronto: **abre no celular e joga ~2 minutos**.
 
-**Prerequisites:**  Node.js
+## Estrutura
 
+```text
+mobile/     Expo (iOS + Android) — app principal
+web/        Protótipo Vite legado (referência)
+docs/       Palácio enxuto
+assets/     placeholders + pipeline Blender (congelado)
+```
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+## Rodar
+
+```bash
+cd mobile
+npm install
+npm start          # Expo Go / emulador
+npm test           # domínio XP
+npm run typecheck
+```
+
+Protótipo web (opcional): `cd web && npm install && npm run dev`.
+
+## Docs
+
+Comece em [`docs/README.md`](docs/README.md). Plano longo: [`PRODUCT_PLAN.md`](PRODUCT_PLAN.md). Agentes: [`AGENTS.md`](AGENTS.md).
+
+## Repo
+
+https://github.com/shiguemori/questlog-rpg

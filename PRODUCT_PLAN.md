@@ -1,9 +1,12 @@
-# QuestLog-RPG: Product Discovery & Planning
+# QuestLog (`questlog-rpg`): Product Discovery & Planning
+
+> Repo/pacote: `questlog-rpg`. Display: **QuestLog**. Marca: Shiguemori.  
+> Palácio enxuto: [`docs/README.md`](docs/README.md). App principal: `mobile/` (Expo).
 
 ## A) Visão do Produto & Persona Principal
 
 **Visão do Produto:**
-O QuestLog-RPG transforma a gestão de tarefas mundanas em uma jornada épica de RPG. O objetivo é gamificar a produtividade diária, tornando a conclusão de hábitos e obrigações uma fonte de gratificação imediata através de XP, evolução de personagem e validação social. Diferente de apps de tarefas comuns, o QuestLog foca no "sentimento de progressão" e na "competição saudável", transformando a disciplina em um jogo onde o jogador é o herói da sua própria vida.
+O QuestLog transforma a gestão de tarefas mundanas em uma jornada épica de RPG. O objetivo é gamificar a produtividade diária, tornando a conclusão de hábitos e obrigações uma fonte de gratificação imediata através de XP, evolução de personagem e validação social. Diferente de apps de tarefas comuns, o QuestLog foca no "sentimento de progressão" e na "competição saudável", transformando a disciplina em um jogo onde o jogador é o herói da sua própria vida.
 
 **Persona Principal:**
 *   **Nome:** Lucas, o "Aventureiro Desorganizado".
@@ -198,10 +201,24 @@ O QuestLog-RPG transforma a gestão de tarefas mundanas em uma jornada épica de
 
 ## K) Checklist de Implementação MVP (Próximos Passos)
 
-1.  **Refatoração de Tipos:** Atualizar `types.ts` para incluir novos campos (UID, CreatedAt rigoroso).
-2.  **UI de Seleção de Classe:** Criar tela de escolha inicial de Herói (atualmente fixo em Warrior).
-3.  **Melhoria no Sistema de Atributos:** Adicionar feedback visual quando um ponto é alocado (partículas/cores).
-4.  **Persistent Storage:** Garantir que o `localStorage` suporte a nova estrutura de dados (ou migrar para SQLite se for mobile).
-5.  **Animações de Level Up:** Implementar um overlay (ex: `framer-motion` ou CSS Puro) para comemorar o novo nível.
-6.  **Sistema de Categorias:** Adicionar cores e ícones específicos para cada reino (Study, Health, etc) na visualização da tarefa.
-7.  **Validação Anti-Abuso:** Implementar lógica simples para impedir o farm de XP (ex: cooldown de 30s entre conclusões).
+1.  [x] **Expo shell:** `mobile/` com onboarding (nome + classe) → quest log.
+2.  [x] **Domínio XP/streak:** `mobile/src/domain/` + testes.
+3.  [x] **Persistência mobile:** AsyncStorage (`QUESTLOG_RPG_MOBILE_V1`).
+4.  [ ] **Validar 2 min no dispositivo** (Expo Go / emulador).
+5.  [ ] **Overlay de Level Up** no mobile.
+6.  [ ] **Categorias na UI** (Study, Health, etc).
+7.  [ ] **Anti-Abuso:** cooldown / limite diário de XP.
+8.  [ ] **Blender:** só após loop estável — ver `docs/06-pipeline-blender.md`.
+
+## L) Concorrentes (pesquisa 2026-11)
+
+| Concorrente | Posicionamento | Implicação MVP QuestLog |
+|-------------|----------------|-------------------------|
+| **Habitica** | RPG pixel + parties; sync cloud; offline fraco | Diferenciar com **local-first** e loop simples |
+| **MainQuest** | Quests + habits + classes + focus timer | Não copiar idle/story mode no MVP |
+| **Taskoria** | Boss por location; sem pena por miss | Evitar combate/economia até V2 |
+| **Levla** | Idle RPG + 18 skills + guildas | Cortar profundidade de jogo; foco hábito→XP |
+| **Habit Quest** | Pixel pet + bosses + Health | Companion/3D só via pipeline Blender depois |
+| **Life Quest Journal** | Offline, sem conta, 4.8★ | Validação do corte “abre e joga offline” |
+
+**Corte deliberado:** um loop (onboarding → log → XP). Sem OCR/IA, sem social, sem fábrica de assets.
