@@ -23,14 +23,16 @@ function at(day: number, hour: number, minute = 0): Date {
 }
 
 /** Registra uma quest e a conclui `waitMs` depois. Devolve o novo estado e o resultado. */
-function play(state: AppState, title: string, difficulty: Difficulty, createdAt: Date, waitMs: number) {
+function play(
+  state: AppState,
+  title: string,
+  difficulty: Difficulty,
+  createdAt: Date,
+  waitMs: number,
+) {
   const added = addQuest(state, { title, difficulty, category: 'STUDY' }, createdAt);
   assert.ok(added.ok, 'quest deveria ser registrada');
-  const result = completeQuest(
-    added.state,
-    added.quest.id,
-    new Date(createdAt.getTime() + waitMs),
-  );
+  const result = completeQuest(added.state, added.quest.id, new Date(createdAt.getTime() + waitMs));
   assert.ok(result, 'quest deveria ser concluída');
   return result;
 }

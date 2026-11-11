@@ -27,6 +27,7 @@ function quest(overrides: Partial<Quest>): Quest {
     xp: 10,
     completed: false,
     createdAt: NOW.toISOString(),
+    recurring: false,
     ...overrides,
   };
 }
@@ -165,7 +166,12 @@ describe('deleteQuest / clearCompletedQuests', () => {
 describe('splitQuests', () => {
   const quests: Quest[] = [
     quest({ id: 'a', category: 'STUDY' }),
-    quest({ id: 'b', category: 'HEALTH', completed: true, completedAt: '2026-11-11T09:00:00.000Z' }),
+    quest({
+      id: 'b',
+      category: 'HEALTH',
+      completed: true,
+      completedAt: '2026-11-11T09:00:00.000Z',
+    }),
     quest({ id: 'c', category: 'STUDY', completed: true, completedAt: '2026-11-11T11:00:00.000Z' }),
     quest({ id: 'd', category: 'HEALTH' }),
   ];

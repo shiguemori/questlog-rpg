@@ -1,5 +1,6 @@
 import { previousIsoDate, shiftIsoDate, weekdayIndex } from './dates';
-import type { Category, Difficulty, Quest, UserStats } from './types';
+import { QUEST_PRESETS, type QuestPreset } from './questPresets';
+import type { Category, Difficulty, PlayerSettings, Quest, UserStats } from './types';
 
 /**
  * Contrato do loop diário. Não altera XP nem o anti-farm:
@@ -46,11 +47,7 @@ export interface StreakMilestone {
 }
 
 export type HabitCueKind =
-  | 'FIRST_STEP'
-  | 'IN_PROGRESS'
-  | 'DONE_TODAY'
-  | 'STREAK_WAITING'
-  | 'FRESH_START';
+  'FIRST_STEP' | 'IN_PROGRESS' | 'DONE_TODAY' | 'STREAK_WAITING' | 'FRESH_START';
 
 export interface HabitCue {
   kind: HabitCueKind;
@@ -89,12 +86,17 @@ export function dailyCompletionsOn(stats: UserStats, todayIsoDate: string): numb
   return 0;
 }
 
-export function buildDailyGoal(stats: UserStats, todayIsoDate: string): DailyGoal {
-  const done = Math.min(DAILY_GOAL_TARGET, Math.max(0, dailyCompletionsOn(stats, todayIsoDate)));
+export function buildDailyGoal(
+  stats: UserStats,
+  todayIsoDate: string,
+  target: 1 | 2 | 3 = DAILY_GOAL_TARGET,
+): DailyGoal {
+  const safeTarget = target === 2 || target === 3 ? target : DAILY_GOAL_TARGET;
+  const done = Math.min(safeTarget, Math.max(0, dailyCompletionsOn(stats, todayIsoDate)));
   return {
-    target: DAILY_GOAL_TARGET,
+    target: safeTarget,
     done,
-    met: done >= DAILY_GOAL_TARGET,
+    met: done >= safeTarget,
   };
 }
 
@@ -183,7 +185,9 @@ export function buildHabitCue(stats: UserStats, todayIsoDate: string): HabitCue 
     return {
       kind: 'IN_PROGRESS',
       message:
-        left === 1 ? 'Falta 1 quest para a meta de hoje.' : `Faltam ${left} quests para a meta de hoje.`,
+        left === 1
+          ? 'Falta 1 quest para a meta de hoje.'
+          : `Faltam ${left} quests para a meta de hoje.`,
     };
   }
   if (stats.lastCompletedDate == null) {
@@ -255,6 +259,57 @@ export function sundayReview(days: readonly string[], todayIsoDate: string): str
   if (pace.thisWeek === 0) return 'Domingo tranquilo. Uma quest ainda conta nesta semana.';
   const unit = pace.thisWeek === 1 ? 'dia' : 'dias';
   return `Fechamento da semana: ${pace.thisWeek} ${unit} com quest.`;
+}
+
+/** Sugestão estável no dia civil. A mesma data sempre devolve o mesmo atalho. */
+export function suggestionForDay(todayIsoDate: string): QuestPreset {
+  let hash = 0;
+  for (const char of todayIsoDate) hash = (hash * 33 + char.charCodeAt(0)) >>> 0;
+  return QUEST_PRESETS[hash % QUEST_PRESETS.length] ?? QUEST_PRESETS[0];
+}
+
+export function daysBetween(earlier: string, later: string): number | null {
+  const start = shiftIsoDate(earlier, 0);
+  if (!start) return null;
+  let cursor = start;
+  let days = 0;
+  while (cursor < later && days < 4000) {
+    const next = shiftIsoDate(cursor, 1);
+    if (!next) return null;
+    cursor = next;
+    days += 1;
+  }
+  return cursor === later ? days : null;
+}
+
+/** Tela de retorno depois de 7+ dias sem concluir. Dispensável, não zera nada. */
+export function shouldOfferReturn(
+  stats: UserStats,
+  settings: PlayerSettings,
+  todayIsoDate: string,
+): boolean {
+  if (!stats.lastCompletedDate) return false;
+  if (settings.dismissedReturnGap === stats.lastCompletedDate) return false;
+  const gap = daysBetween(stats.lastCompletedDate, todayIsoDate);
+  return gap != null && gap >= 7;
+}
+
+/** Dias distintos da semana calendário (segunda a domingo) que contém `today`. */
+export function daysInCalendarWeek(days: readonly string[], todayIsoDate: string): number {
+  const weekday = weekdayIndex(todayIsoDate);
+  if (weekday == null) return 0;
+  const mondayOffset = (weekday + 6) % 7;
+  const start = shiftIsoDate(todayIsoDate, -mondayOffset);
+  const end = start ? shiftIsoDate(start, 6) : null;
+  if (!start || !end) return 0;
+  const unique = new Set(days.filter((day) => day >= start && day <= end));
+  return unique.size;
+}
+
+export function weekShareText(days: readonly string[], todayIsoDate: string): string {
+  const pace = buildWeekPace(days, todayIsoDate);
+  const unit = pace.thisWeek === 1 ? 'dia' : 'dias';
+  return `QuestLog: ${pace.thisWeek} de 7 ${unit} com quest nesta semana.`;
 }
 
 /** Rascunho da quest mais recente, para repetir sem redigitar. */

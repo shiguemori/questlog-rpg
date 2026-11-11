@@ -14,12 +14,20 @@ export interface QuestRowProps {
   nowMs: number;
   onComplete: (questId: string) => void;
   onDelete: (questId: string) => void;
+  onEdit: (questId: string) => void;
+  onToggleRecurring: (questId: string) => void;
 }
 
-function QuestRowBase({ quest, nowMs, onComplete, onDelete }: QuestRowProps) {
+function QuestRowBase({
+  quest,
+  nowMs,
+  onComplete,
+  onDelete,
+  onEdit,
+  onToggleRecurring,
+}: QuestRowProps) {
   // nowMs 0 = a lista já sabe que esta linha não está em contagem.
-  const remainingMs =
-    quest.completed || nowMs <= 0 ? 0 : msUntilXpEligible(quest, nowMs);
+  const remainingMs = quest.completed || nowMs <= 0 ? 0 : msUntilXpEligible(quest, nowMs);
   const waitingForXp = !quest.completed && remainingMs > 0;
   const secondsLeft = Math.ceil(remainingMs / 1000);
 
@@ -59,13 +67,36 @@ function QuestRowBase({ quest, nowMs, onComplete, onDelete }: QuestRowProps) {
       <View style={styles.copy}>
         <Text style={[styles.title, quest.completed && styles.titleDone]}>{quest.title}</Text>
         <Text style={styles.meta}>
-          {CATEGORY_LABELS[quest.category]} · {DIFFICULTY_LABELS[quest.difficulty]} · +{quest.xp}{' '}
-          XP
+          {CATEGORY_LABELS[quest.category]} · {DIFFICULTY_LABELS[quest.difficulty]} · +{quest.xp} XP
         </Text>
         {waitingForXp ? (
           <Text style={styles.waiting} testID={`quest-wait-${quest.id}`}>
             XP libera em {secondsLeft}s
           </Text>
+        ) : null}
+        {!quest.completed ? (
+          <View style={styles.rowActions}>
+            <Pressable
+              onPress={() => onEdit(quest.id)}
+              accessibilityRole="button"
+              accessibilityLabel={`Editar quest ${quest.title}`}
+              style={styles.linkBtn}
+            >
+              <Text style={styles.linkText}>Editar</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => onToggleRecurring(quest.id)}
+              accessibilityRole="button"
+              accessibilityLabel={
+                quest.recurring
+                  ? `Tirar hábito diário de ${quest.title}`
+                  : `Tornar ${quest.title} um hábito diário`
+              }
+              style={styles.linkBtn}
+            >
+              <Text style={styles.linkText}>{quest.recurring ? 'Diária' : 'Fixar'}</Text>
+            </Pressable>
+          </View>
         ) : null}
       </View>
 
@@ -130,6 +161,9 @@ const styles = StyleSheet.create({
   titleDone: { textDecorationLine: 'line-through', color: colors.textMuted },
   meta: { marginTop: 4, fontSize: 12, color: colors.textMuted },
   waiting: { marginTop: 4, fontSize: 12, fontWeight: '700', color: colors.amberSoft },
+  rowActions: { flexDirection: 'row', gap: 8, marginTop: 6 },
+  linkBtn: { minHeight: 44, justifyContent: 'center' },
+  linkText: { fontSize: 13, fontWeight: '700', color: colors.amberSoft },
   completeBtn: {
     minHeight: 44,
     minWidth: 64,

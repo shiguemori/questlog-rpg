@@ -1,11 +1,6 @@
 import type { AttributeKey, Attributes, Category, CharacterClass, Difficulty } from './types';
 
-export const ATTRIBUTE_KEYS: AttributeKey[] = [
-  'strength',
-  'intelligence',
-  'agility',
-  'vitality',
-];
+export const ATTRIBUTE_KEYS: AttributeKey[] = ['strength', 'intelligence', 'agility', 'vitality'];
 
 export const ATTRIBUTE_LABELS: Record<AttributeKey, string> = {
   strength: 'Força',

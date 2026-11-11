@@ -73,10 +73,7 @@ export interface DailyXpSummary {
 }
 
 export function buildDailyXpSummary(stats: UserStats, todayIsoDate: string): DailyXpSummary {
-  const xpQuestsToday = Math.min(
-    MAX_XP_QUESTS_PER_DAY,
-    completionsForToday(stats, todayIsoDate),
-  );
+  const xpQuestsToday = Math.min(MAX_XP_QUESTS_PER_DAY, completionsForToday(stats, todayIsoDate));
   return {
     xpQuestsToday,
     xpQuestsLimit: MAX_XP_QUESTS_PER_DAY,

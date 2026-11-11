@@ -8,7 +8,7 @@ Psicologia usada de propósito, sem dark pattern: hábito minúsculo (uma quest 
 
 O anti-farm continua intocado: XP só 1 minuto depois de criar a quest, no máximo 10 quests com XP por dia. A meta diária conta a conclusão; o XP não.
 
-**Contagem desta lista:** 20 FEITO · 10 TODO.
+**Contagem desta lista:** 30 FEITO. Nenhum TODO aberto.
 
 ## P0 — O loop do dia (8/8 feitos)
 
@@ -40,25 +40,25 @@ O anti-farm continua intocado: XP só 1 minuto depois de criar a quest, no máxi
 | 19 | Vazio alinhado à meta | Sem quest aberta, o texto fala da meta de hoje ou de que ela já foi feita, e o botão "Criar quest" continua | O estado vazio empurra a única ação que importa | FEITO |
 | 20 | Leitor de tela ouve a meta | Ao concluir, o anúncio junta o XP (ou o motivo de não ganhar) e a frase da meta ou do marco, quando houver | A celebração não fica só na tela | FEITO |
 
-## P2 — Depois que o loop grudar (0/7)
+## P2 — Depois que o loop grudar (7/7 feitos)
 
 | # | Item | Aceite | Psicologia | Status |
 |---|------|--------|------------|--------|
-| 21 | Hábito fixo | O jogador marca uma quest para reaparecer no dia seguinte. Continua no limite de 10 XP/dia e no 1 minuto | A rotina vira objeto, não só memória. Estende o item 37 do backlog 50 | TODO |
-| 22 | Sugestão do dia, sem push | Uma sugestão local, estável naquele dia civil, dispensável. Nenhuma notificação | Deixa o "o que fazer" pronto, com o jogador no controle | TODO |
-| 23 | Meta ajustável 1, 2 ou 3 | O padrão segue 1. O jogador pode subir até 3. Nunca mais que isso nesta tela | Autonomia sem transformar o hábito em lista infinita | TODO |
-| 24 | Escudo de streak manual | No máximo 1 por mês, o jogador ativa antes. Nunca entra sozinho e não gera XP | Protege a sequência sem apagar a consequência às escondidas | TODO |
-| 25 | Lembrete opt-in de um horário | Um alarme local, fácil de desligar, sem repetir o dia inteiro. Validar o que o Expo Go permite (item 38) | Deixa o gatilho externo, só se a pessoa pedir | TODO |
-| 26 | Renomear o herói | Na folha, o nome (2–24 letras) muda e o save acompanha. O pular já existe | O nome é parte da identidade; hoje o pular trava em "Herói" até reiniciar | TODO |
-| 27 | Conquista "quatro dias na semana" | Desbloqueia quando 4 dias distintos da semana corrente estão no log. Quest sem conclusão não conta | Maestria semanal, ainda limitada pelo anti-farm | TODO |
+| 21 | Hábito fixo | O jogador marca uma quest para reaparecer no dia seguinte. Continua no limite de 10 XP/dia e no 1 minuto | A rotina vira objeto, não só memória. Estende o item 37 do backlog 50 | FEITO |
+| 22 | Sugestão do dia, sem push | Uma sugestão local, estável naquele dia civil, dispensável. Nenhuma notificação | Deixa o "o que fazer" pronto, com o jogador no controle | FEITO |
+| 23 | Meta ajustável 1, 2 ou 3 | O padrão segue 1. O jogador pode subir até 3. Nunca mais que isso nesta tela | Autonomia sem transformar o hábito em lista infinita | FEITO |
+| 24 | Escudo de streak manual | No máximo 1 por mês, o jogador ativa antes. Nunca entra sozinho e não gera XP | Protege a sequência sem apagar a consequência às escondidas | FEITO |
+| 25 | Lembrete opt-in de um horário | Um alarme local, fácil de desligar, sem repetir o dia inteiro. Validar o que o Expo Go permite (item 38) | Deixa o gatilho externo, só se a pessoa pedir | FEITO |
+| 26 | Renomear o herói | Na folha, o nome (2–24 letras) muda e o save acompanha. O pular já existe | O nome é parte da identidade; hoje o pular trava em "Herói" até reiniciar | FEITO |
+| 27 | Conquista "quatro dias na semana" | Desbloqueia quando 4 dias distintos da semana corrente estão no log. Quest sem conclusão não conta | Maestria semanal, ainda limitada pelo anti-farm | FEITO |
 
-## P3 — Opcional e social leve (0/3)
+## P3 — Opcional e social leve (3/3 feitos)
 
 | # | Item | Aceite | Psicologia | Status |
 |---|------|--------|------------|--------|
-| 28 | Som de vitória opcional | Desligado por padrão. Um toque curto só na vitória com XP, respeitando o silencioso | Delight para quem quer; silêncio para quem não quer | TODO |
-| 29 | Exportar a semana em texto | Um parágrafo copiável ("3 de 7 dias") sem rede social obrigatória | Social só se a pessoa decidir contar | TODO |
-| 30 | Tela curta depois de uma pausa longa | Após 7+ dias sem concluir, uma tela dispensável com a mesma frase de recomeço, sem zerar nada além do que o streak já zera | O retorno é um convite, não um julgamento | TODO |
+| 28 | Som de vitória opcional | Desligado por padrão. Um toque curto só na vitória com XP, respeitando o silencioso | Delight para quem quer; silêncio para quem não quer | FEITO |
+| 29 | Exportar a semana em texto | Um parágrafo copiável ("3 de 7 dias") sem rede social obrigatória | Social só se a pessoa decidir contar | FEITO |
+| 30 | Tela curta depois de uma pausa longa | Após 7+ dias sem concluir, uma tela dispensável com a mesma frase de recomeço, sem zerar nada além do que o streak já zera | O retorno é um convite, não um julgamento | FEITO |
 
 ## O que ficou de fora de propósito
 

@@ -1,3 +1,5 @@
+import { daysInCalendarWeek } from './engagement';
+import { localIsoDate } from './dates';
 import type { AppState, AttributeKey } from './types';
 
 const HERO_RANKS: readonly { level: number; title: string }[] = [
@@ -24,7 +26,9 @@ export function nextRankHint(level: number): string {
   const next = HERO_RANKS.find((rank) => rank.level > safe);
   if (!next) return 'Você é Lenda. O hábito é a recompensa.';
   const left = next.level - safe;
-  return left === 1 ? `Mais 1 nível para ${next.title}.` : `Mais ${left} níveis para ${next.title}.`;
+  return left === 1
+    ? `Mais 1 nível para ${next.title}.`
+    : `Mais ${left} níveis para ${next.title}.`;
 }
 
 /**
@@ -107,6 +111,12 @@ export const ACHIEVEMENTS: readonly Achievement[] = [
     title: 'Herói de verdade',
     description: 'Chegue ao nível 5.',
     isUnlocked: (s) => s.character.level >= 5,
+  },
+  {
+    id: 'WEEK_4',
+    title: 'Quatro dias na semana',
+    description: 'Conclua quests em 4 dias diferentes desta semana.',
+    isUnlocked: (s) => daysInCalendarWeek(s.stats.completionDays, localIsoDate(new Date())) >= 4,
   },
 ];
 

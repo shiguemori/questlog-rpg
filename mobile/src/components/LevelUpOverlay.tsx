@@ -72,8 +72,8 @@ export function LevelUpOverlay({
           <Text style={styles.title}>Level up!</Text>
           <Text style={styles.level}>Nv. {level}</Text>
           <Text style={styles.body}>
-            {heroName}, você ficou mais forte. Toque no seu herói para distribuir os novos
-            pontos de atributo.
+            {heroName}, você ficou mais forte. Toque no seu herói para distribuir os novos pontos de
+            atributo.
           </Text>
           <Pressable
             style={styles.cta}

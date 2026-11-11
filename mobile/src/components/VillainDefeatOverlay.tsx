@@ -29,11 +29,7 @@ const EASE_OUT = Easing.bezier(0.23, 1, 0.32, 1);
  * Caller: App.tsx após completeQuest.
  * Pedido: "Vilão derrotado ao completar task — se anti-farm bloquear XP, feedback diferente".
  */
-export function VillainDefeatOverlay({
-  event,
-  onDismiss,
-  onUndo,
-}: VillainDefeatOverlayProps) {
+export function VillainDefeatOverlay({ event, onDismiss, onUndo }: VillainDefeatOverlayProps) {
   const visible = event != null;
   const reduceMotion = useReducedMotion();
   const opacity = useAnimatedValue(0);
@@ -112,8 +108,7 @@ export function VillainDefeatOverlay({
   if (!event) return null;
 
   const isVictory = event.outcome === 'VICTORY';
-  const denyCopy =
-    event.denyReason != null ? XP_DENY_COPY[event.denyReason] : null;
+  const denyCopy = event.denyReason != null ? XP_DENY_COPY[event.denyReason] : null;
 
   return (
     <Modal
@@ -125,9 +120,7 @@ export function VillainDefeatOverlay({
     >
       <View style={styles.backdrop} accessibilityViewIsModal>
         <Animated.View style={[styles.card, { opacity }]}>
-          <Text style={styles.eyebrow}>
-            {isVictory ? 'Combate' : 'Sem recompensa'}
-          </Text>
+          <Text style={styles.eyebrow}>{isVictory ? 'Combate' : 'Sem recompensa'}</Text>
           <Text style={styles.title}>
             {isVictory ? event.villain.defeatedTitle : 'Quest marcada'}
           </Text>
@@ -176,9 +169,7 @@ export function VillainDefeatOverlay({
           {isVictory ? (
             <Text style={styles.xp}>+{event.xpAwarded} XP</Text>
           ) : (
-            <Text style={styles.blocked}>
-              {denyCopy ?? 'Concluída sem XP desta vez.'}
-            </Text>
+            <Text style={styles.blocked}>{denyCopy ?? 'Concluída sem XP desta vez.'}</Text>
           )}
           {event.habitLine ? <Text style={styles.habit}>{event.habitLine}</Text> : null}
 
@@ -188,9 +179,7 @@ export function VillainDefeatOverlay({
             accessibilityRole="button"
             accessibilityLabel="Fechar cena de vitória"
           >
-            <Text style={styles.ctaText}>
-              {isVictory ? 'Continuar' : 'Entendi'}
-            </Text>
+            <Text style={styles.ctaText}>{isVictory ? 'Continuar' : 'Entendi'}</Text>
           </Pressable>
           {onUndo ? (
             <Pressable

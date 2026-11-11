@@ -1,14 +1,7 @@
 import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
-import {
-  Alert,
-  Pressable,
-  ScrollView,
-  SectionList,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import { Alert, Pressable, ScrollView, SectionList, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { PressScale } from '../motion/PressScale';
 import { HeroAvatar } from '../components/HeroAvatar';
 import { HeroSheet } from '../components/HeroSheet';
 import { QuestCreateModal } from '../components/QuestCreateModal';
@@ -18,11 +11,25 @@ import { XpBar } from '../components/XpBar';
 import { buildDailyXpSummary, msUntilXpEligible } from '../domain/antiFarm';
 import { CATEGORIES, CATEGORY_LABELS, CLASS_DEFAULTS } from '../domain/constants';
 import { localIsoDate } from '../domain/dates';
-import { buildDailyGoal, buildHabitCue, latestQuestDraft, streakTitle } from '../domain/engagement';
+import {
+  buildDailyGoal,
+  buildHabitCue,
+  latestQuestDraft,
+  shouldOfferReturn,
+  streakTitle,
+  suggestionForDay,
+} from '../domain/engagement';
 import { heroRankForLevel, nextRankHint } from '../domain/progression';
 import { presetXp, QUEST_PRESETS, type QuestPreset } from '../domain/questPresets';
 import { splitQuests, type CategoryFilter, type NewQuestInput } from '../domain/quests';
-import type { AppState, AttributeKey, Quest } from '../domain/types';
+import type {
+  AppState,
+  AttributeKey,
+  Category,
+  CharacterClass,
+  PlayerSettings,
+  Quest,
+} from '../domain/types';
 import { colors } from '../theme/colors';
 
 interface QuestLogScreenProps {
@@ -41,6 +48,16 @@ interface QuestLogScreenProps {
   onDismissStorageNotice: () => void;
   canUndo: boolean;
   onUndo: () => void;
+  onEditQuest: (questId: string, title: string, category: Category) => string | null;
+  onToggleRecurring: (questId: string) => void;
+  onRename: (name: string) => string | null;
+  onChangeClass: (characterClass: CharacterClass) => void;
+  onPatchSettings: (partial: Partial<PlayerSettings>) => void;
+  onToggleShield: () => void;
+  onImportSave: (raw: string) => string | null;
+  onExportSave: () => void;
+  onShareWeek: () => void;
+  onCalendarDay: () => void;
 }
 
 interface QuestSection {
@@ -66,18 +83,36 @@ export function QuestLogScreen({
   onDismissStorageNotice,
   canUndo,
   onUndo,
+  onEditQuest,
+  onToggleRecurring,
+  onRename,
+  onChangeClass,
+  onPatchSettings,
+  onToggleShield,
+  onImportSave,
+  onExportSave,
+  onShareWeek,
+  onCalendarDay,
 }: QuestLogScreenProps) {
   const insets = useSafeAreaInsets();
   const today = useLocalToday();
+  useEffect(() => {
+    onCalendarDay();
+  }, [today, onCalendarDay]);
   const [filter, setFilter] = useState<CategoryFilter>('ALL');
   const [modalOpen, setModalOpen] = useState(false);
   const [heroOpen, setHeroOpen] = useState(false);
   const [showAllDone, setShowAllDone] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   const { character, stats } = state;
   const classLabel = CLASS_DEFAULTS[character.characterClass].label;
   const daily = buildDailyXpSummary(stats, today);
-  const goal = buildDailyGoal(stats, today);
+  const goal = buildDailyGoal(stats, today, state.settings.dailyGoalTarget);
+  const suggestion = suggestionForDay(today);
+  const showSuggestion = state.settings.dismissedSuggestionDate !== today;
+  const showReturn = shouldOfferReturn(stats, state.settings, today);
+  const editing = state.quests.find((quest) => quest.id === editingId) ?? null;
   const cue = buildHabitCue(stats, today);
   const streakName = streakTitle(stats.streak);
   const repeatDraft = latestQuestDraft(state.quests);
@@ -147,6 +182,33 @@ export function QuestLogScreen({
               <Text style={styles.presetChipTitle} numberOfLines={1}>
                 De novo · {repeatDraft.title}
               </Text>
+            </Pressable>
+          ) : null}
+          {showSuggestion ? (
+            <Pressable
+              style={({ pressed }) => [styles.presetChip, pressed && styles.pressed]}
+              onPress={() =>
+                setPresetError(
+                  onAddQuest({
+                    title: suggestion.title,
+                    difficulty: suggestion.difficulty,
+                    category: suggestion.category,
+                  }),
+                )
+              }
+              accessibilityRole="button"
+              accessibilityLabel={`Sugestão de hoje: ${suggestion.title}`}
+            >
+              <Text style={styles.presetChipTitle} numberOfLines={2}>
+                Hoje · {suggestion.chip}
+              </Text>
+              <Pressable
+                onPress={() => onPatchSettings({ dismissedSuggestionDate: today })}
+                accessibilityRole="button"
+                accessibilityLabel="Dispensar sugestão de hoje"
+              >
+                <Text style={styles.presetChipMeta}>Dispensar</Text>
+              </Pressable>
             </Pressable>
           ) : null}
           {QUEST_PRESETS.map((preset) => (
@@ -268,7 +330,7 @@ export function QuestLogScreen({
             size={64}
           />
           <View style={styles.heroCopy}>
-            <Text style={styles.heroName} numberOfLines={1}>
+            <Text style={styles.heroName} numberOfLines={2}>
               {character.name}
             </Text>
             <Text style={styles.heroMeta}>
@@ -336,6 +398,19 @@ export function QuestLogScreen({
         </Pressable>
       ) : null}
 
+      {showReturn ? (
+        <Pressable
+          style={styles.feedbackBanner}
+          onPress={() => onPatchSettings({ dismissedReturnGap: stats.lastCompletedDate })}
+          accessibilityRole="button"
+          accessibilityLabel="Recomeço leve. Uma quest hoje abre um streak novo. Toque para dispensar."
+        >
+          <Text style={styles.feedbackText}>
+            Recomeço leve. Uma quest hoje abre um streak novo.
+          </Text>
+        </Pressable>
+      ) : null}
+
       {canUndo ? (
         <Pressable
           style={styles.undoBanner}
@@ -355,26 +430,42 @@ export function QuestLogScreen({
         renderSectionFooter={renderSectionFooter}
         onComplete={onCompleteQuest}
         onDelete={onDeleteQuest}
+        onEdit={setEditingId}
+        onToggleRecurring={onToggleRecurring}
         bottomInset={insets.bottom}
       />
 
-      <Pressable
-        style={({ pressed }) => [
-          styles.fab,
-          { bottom: insets.bottom + 24 },
-          pressed && styles.pressed,
-        ]}
+      <PressScale
+        style={[styles.fab, { bottom: insets.bottom + 24 }]}
         onPress={() => setModalOpen(true)}
         accessibilityRole="button"
         accessibilityLabel="Criar quest personalizada"
       >
         <Text style={styles.fabText}>+</Text>
-      </Pressable>
+      </PressScale>
 
       <QuestCreateModal
-        visible={modalOpen}
-        onClose={() => setModalOpen(false)}
-        onSubmit={onAddQuest}
+        visible={modalOpen || editing != null}
+        initial={
+          editing
+            ? {
+                title: editing.title,
+                category: editing.category,
+                difficulty: editing.difficulty,
+              }
+            : undefined
+        }
+        lockDifficulty={editing != null}
+        onClose={() => {
+          setModalOpen(false);
+          setEditingId(null);
+        }}
+        onSubmit={(input) => {
+          if (!editing) return onAddQuest(input);
+          const message = onEditQuest(editing.id, input.title, input.category);
+          if (!message) setEditingId(null);
+          return message;
+        }}
       />
 
       <HeroSheet
@@ -386,6 +477,13 @@ export function QuestLogScreen({
           setHeroOpen(false);
           onResetJourney();
         }}
+        onRename={onRename}
+        onChangeClass={onChangeClass}
+        onPatchSettings={onPatchSettings}
+        onToggleShield={onToggleShield}
+        onImportSave={onImportSave}
+        onExportSave={onExportSave}
+        onShareWeek={onShareWeek}
       />
     </View>
   );
@@ -411,6 +509,8 @@ const QuestSections = memo(function QuestSections({
   renderSectionFooter,
   onComplete,
   onDelete,
+  onEdit,
+  onToggleRecurring,
   bottomInset,
 }: {
   quests: readonly Quest[];
@@ -419,6 +519,8 @@ const QuestSections = memo(function QuestSections({
   renderSectionFooter: (info: { section: QuestSection }) => React.ReactElement | null;
   onComplete: (questId: string) => void;
   onDelete: (questId: string) => void;
+  onEdit: (questId: string) => void;
+  onToggleRecurring: (questId: string) => void;
   bottomInset: number;
 }) {
   const [nowMs, setNowMs] = useState(() => Date.now());
@@ -442,10 +544,12 @@ const QuestSections = memo(function QuestSections({
           nowMs={ticking ? nowMs : 0}
           onComplete={onComplete}
           onDelete={onDelete}
+          onEdit={onEdit}
+          onToggleRecurring={onToggleRecurring}
         />
       );
     },
-    [nowMs, onComplete, onDelete],
+    [nowMs, onComplete, onDelete, onEdit, onToggleRecurring],
   );
 
   return (

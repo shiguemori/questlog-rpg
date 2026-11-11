@@ -78,26 +78,24 @@ describe('ritual de retorno', () => {
   });
 
   it('lembra o streak vivo de ontem', () => {
-    const cue = buildHabitCue(
-      stats({ streak: 4, lastCompletedDate: '2026-11-10' }),
-      '2026-11-11',
-    );
+    const cue = buildHabitCue(stats({ streak: 4, lastCompletedDate: '2026-11-10' }), '2026-11-11');
     assert.equal(cue.kind, 'STREAK_WAITING');
     assert.match(cue.message, /4 dias/);
   });
 
   it('recomeça sem culpa depois de um buraco', () => {
-    const cue = buildHabitCue(
-      stats({ streak: 5, lastCompletedDate: '2026-11-01' }),
-      '2026-11-11',
-    );
+    const cue = buildHabitCue(stats({ streak: 5, lastCompletedDate: '2026-11-01' }), '2026-11-11');
     assert.equal(cue.kind, 'FRESH_START');
     assert.match(cue.message, /Recomeço leve/);
   });
 
   it('depois da vitória de hoje aponta para amanhã', () => {
     const cue = buildHabitCue(
-      stats({ dailyCompletions: 1, dailyCompletionsDate: '2026-11-11', lastCompletedDate: '2026-11-11' }),
+      stats({
+        dailyCompletions: 1,
+        dailyCompletionsDate: '2026-11-11',
+        lastCompletedDate: '2026-11-11',
+      }),
       '2026-11-11',
     );
     assert.equal(cue.kind, 'DONE_TODAY');
@@ -125,10 +123,7 @@ describe('streak', () => {
   it('a linha da cena prioriza o marco e some quando não há o que dizer', () => {
     const milestone = streakMilestoneCrossed(2, 3);
     assert.match(celebrationLine({ dailyGoalJustMet: true, milestone }) ?? '', /Três dias/);
-    assert.match(
-      celebrationLine({ dailyGoalJustMet: true, milestone: null }) ?? '',
-      /Meta do dia/,
-    );
+    assert.match(celebrationLine({ dailyGoalJustMet: true, milestone: null }) ?? '', /Meta do dia/);
     assert.equal(celebrationLine({ dailyGoalJustMet: false, milestone: null }), null);
   });
 });
@@ -197,6 +192,7 @@ describe('repetir a última quest', () => {
       xp: 10,
       completed: true,
       createdAt: '2026-11-10T10:00:00.000Z',
+      recurring: false,
     };
     const newer: Quest = {
       id: 'b',
@@ -206,6 +202,7 @@ describe('repetir a última quest', () => {
       xp: 10,
       completed: false,
       createdAt: '2026-11-11T10:00:00.000Z',
+      recurring: false,
     };
     assert.equal(latestQuestDraft([older, newer])?.title, 'Beber água');
     assert.equal(latestQuestDraft([]), null);

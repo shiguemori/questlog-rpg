@@ -4,6 +4,7 @@ import { MAX_XP_QUESTS_PER_DAY } from './antiFarm';
 import { completeQuest } from './completeQuest';
 import { CLASS_DEFAULTS, INITIAL_MAX_XP } from './constants';
 import { localIsoDate } from './dates';
+import { defaultPlayerSettings } from './state';
 import type { AppState, Quest } from './types';
 import { xpProgressRatio } from './xpBar';
 
@@ -16,6 +17,7 @@ function makeState(overrides: Partial<AppState> = {}): AppState {
     xp: 50,
     completed: false,
     createdAt: '2026-11-11T10:00:00.000Z',
+    recurring: false,
   };
   return {
     onboardingDone: true,
@@ -41,6 +43,7 @@ function makeState(overrides: Partial<AppState> = {}): AppState {
       dailyCompletionsDate: null,
       completionDays: [],
     },
+    settings: defaultPlayerSettings(),
     ...overrides,
   };
 }
@@ -71,6 +74,7 @@ describe('completeQuest', () => {
           xp: 10,
           completed: false,
           createdAt: '2026-11-11T10:04:30.000Z',
+          recurring: false,
         },
       ],
     });
@@ -111,6 +115,7 @@ describe('completeQuest', () => {
           xp: 10,
           completed: false,
           createdAt: '2026-11-11T10:00:00.000Z',
+          recurring: false,
         },
       ],
     });
@@ -119,10 +124,7 @@ describe('completeQuest', () => {
     assert.ok(result);
     assert.equal(result.xpAwarded, 10);
     assert.equal(result.denyReason, null);
-    const after = xpProgressRatio(
-      result.state.character.xp,
-      result.state.character.maxXp,
-    );
+    const after = xpProgressRatio(result.state.character.xp, result.state.character.maxXp);
     assert.equal(before, 0);
     assert.equal(after, 0.1);
     assert.ok(after > before);
@@ -168,6 +170,7 @@ describe('completeQuest', () => {
           xp: 10,
           completed: false,
           createdAt: new Date(2026, 10, 11, 23, 0).toISOString(),
+          recurring: false,
         },
       ],
     });
@@ -187,7 +190,8 @@ describe('completeQuest', () => {
     assert.ok(result);
     assert.equal(result.state.quests[0].completedAt, now.toISOString());
     assert.equal(result.state.stats.totalQuestsCompleted, 1);
-    assert.equal(result.state.stats.totalXpEarned, 50);
+    assert.equal(result.state.stats.totalXpEarned, 55);
+    assert.equal(result.bonusXp, 5);
     assert.equal(result.state.stats.streak, 3);
     assert.equal(result.state.stats.bestStreak, 3);
   });
@@ -242,6 +246,7 @@ describe('completeQuest', () => {
             xp: 10,
             completed: false,
             createdAt: '2026-11-11T10:00:00.000Z',
+            recurring: false,
           },
         ],
       },

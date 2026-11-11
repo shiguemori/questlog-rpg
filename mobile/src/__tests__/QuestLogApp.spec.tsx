@@ -1,3 +1,15 @@
+/* eslint-disable import/first, @typescript-eslint/no-require-imports */
+jest.mock('react-native-reanimated', () => {
+  const { View } = require('react-native');
+  return {
+    __esModule: true,
+    default: { View },
+    useSharedValue: (value: unknown) => ({ value }),
+    useAnimatedStyle: (updater: () => object) => updater(),
+    withTiming: (value: unknown) => value,
+  };
+});
+
 import { act, fireEvent, render, screen } from '@testing-library/react-native';
 import React from 'react';
 import { Alert, StyleSheet } from 'react-native';
@@ -99,9 +111,7 @@ describe('QuestLogApp — fluxo no aparelho', () => {
     // Validação do nome: erro explica onde e por quê.
     await screen.findByText('Crie seu herói');
     await fireEvent.press(screen.getByText('Começar jornada'));
-    expect(
-      screen.getByText('Dê um nome com pelo menos 2 letras para o seu herói.'),
-    ).toBeTruthy();
+    expect(screen.getByText('Dê um nome com pelo menos 2 letras para o seu herói.')).toBeTruthy();
 
     await completeOnboarding('Lucas');
     expect(screen.getByText('Lucas')).toBeTruthy();
@@ -110,9 +120,7 @@ describe('QuestLogApp — fluxo no aparelho', () => {
     expect(xpFillPercent()).toBe(0);
 
     // Quest por atalho: aparece com o contador do anti-farm.
-    await fireEvent.press(
-      screen.getByLabelText('Adicionar quest Estudar 25min, mais 25 de XP'),
-    );
+    await fireEvent.press(screen.getByLabelText('Adicionar quest Estudar 25min, mais 25 de XP'));
     expect(screen.getByText('Estudar 25min')).toBeTruthy();
     expect(screen.getByText('XP libera em 60s')).toBeTruthy();
 
@@ -182,6 +190,7 @@ describe('QuestLogApp — fluxo no aparelho', () => {
           xp: 50,
           completed: false,
           createdAt: new Date(2026, 10, 10, 8, 0, 0).toISOString(),
+          recurring: false,
         },
       ],
     };

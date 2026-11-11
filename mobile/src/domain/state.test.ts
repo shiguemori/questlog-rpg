@@ -55,6 +55,7 @@ describe('sanitizeState', () => {
           completed: true,
           createdAt: '2026-11-11T10:00:00.000Z',
           completedAt: '2026-11-11T10:05:00.000Z',
+          recurring: false,
         },
       ],
       stats: {
@@ -133,12 +134,26 @@ describe('sanitizeState', () => {
       onboardingDone: true,
       character: { name: 'Lucas' },
       quests: [
-        { id: 'a', title: 'Ok', category: 'WORK', difficulty: 'HARD', xp: 99999, completed: false, createdAt: '2026-11-11T10:00:00.000Z' },
+        {
+          id: 'a',
+          title: 'Ok',
+          category: 'WORK',
+          difficulty: 'HARD',
+          xp: 99999,
+          completed: false,
+          createdAt: '2026-11-11T10:00:00.000Z',
+        },
         { id: 'a', title: 'Duplicada', category: 'WORK', difficulty: 'EASY', xp: 10 },
         { id: '', title: 'Sem id' },
         { id: 'b', title: '   ' },
         'lixo',
-        { id: 'c', title: 'Campos tortos', category: 'MAGIA', difficulty: 'IMPOSSIBLE', createdAt: 'ontem' },
+        {
+          id: 'c',
+          title: 'Campos tortos',
+          category: 'MAGIA',
+          difficulty: 'IMPOSSIBLE',
+          createdAt: 'ontem',
+        },
       ],
     });
     assert.ok(state);
