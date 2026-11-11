@@ -7,8 +7,10 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { HeroAvatar } from '../components/HeroAvatar';
 import { CLASS_DEFAULTS } from '../domain/constants';
 import type { CharacterClass } from '../domain/types';
+import { colors } from '../theme/colors';
 
 interface OnboardingScreenProps {
   onComplete: (name: string, characterClass: CharacterClass) => void;
@@ -24,6 +26,9 @@ export function OnboardingScreen({ onComplete }: OnboardingScreenProps) {
 
   return (
     <SafeAreaView style={styles.safe}>
+      <View style={styles.atmosphere} pointerEvents="none">
+        <View style={styles.glowOrb} />
+      </View>
       <View style={styles.container}>
         <Text style={styles.brand}>QuestLog</Text>
         <Text style={styles.title}>Crie seu herói</Text>
@@ -31,13 +36,24 @@ export function OnboardingScreen({ onComplete }: OnboardingScreenProps) {
           Um nome, uma classe — depois registre sua primeira quest.
         </Text>
 
+        <View style={styles.preview}>
+          <HeroAvatar
+            characterClass={characterClass}
+            initial={name.trim() || undefined}
+            size={96}
+          />
+          <Text style={styles.previewClass}>
+            {CLASS_DEFAULTS[characterClass].label}
+          </Text>
+        </View>
+
         <Text style={styles.label}>Nome do herói</Text>
         <TextInput
           style={styles.input}
           value={name}
           onChangeText={setName}
           placeholder="ex: Lucas"
-          placeholderTextColor="#64748B"
+          placeholderTextColor={colors.textDim}
           autoCapitalize="words"
           maxLength={24}
         />
@@ -55,10 +71,13 @@ export function OnboardingScreen({ onComplete }: OnboardingScreenProps) {
                 accessibilityRole="button"
                 accessibilityState={{ selected }}
               >
-                <Text style={[styles.classLabel, selected && styles.classLabelSelected]}>
-                  {meta.label}
-                </Text>
-                <Text style={styles.classBlurb}>{meta.blurb}</Text>
+                <HeroAvatar characterClass={cls} size={40} />
+                <View style={styles.classCopy}>
+                  <Text style={[styles.classLabel, selected && styles.classLabelSelected]}>
+                    {meta.label}
+                  </Text>
+                  <Text style={styles.classBlurb}>{meta.blurb}</Text>
+                </View>
               </Pressable>
             );
           })}
@@ -78,53 +97,87 @@ export function OnboardingScreen({ onComplete }: OnboardingScreenProps) {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#0F172A' },
+  safe: { flex: 1, backgroundColor: colors.bg },
+  atmosphere: { ...StyleSheet.absoluteFill, overflow: 'hidden' },
+  glowOrb: {
+    position: 'absolute',
+    top: -60,
+    right: -30,
+    width: 200,
+    height: 200,
+    borderRadius: 100,
+    backgroundColor: 'rgba(245, 158, 11, 0.14)',
+  },
   container: { flex: 1, paddingHorizontal: 20, paddingTop: 24, gap: 12 },
   brand: {
     fontSize: 14,
-    fontWeight: '700',
-    letterSpacing: 2,
+    fontWeight: '800',
+    letterSpacing: 3,
     textTransform: 'uppercase',
-    color: '#F59E0B',
+    color: colors.amber,
   },
-  title: { fontSize: 28, fontWeight: '800', color: '#F8FAFC' },
-  subtitle: { fontSize: 15, color: '#94A3B8', marginBottom: 8, lineHeight: 22 },
-  label: { fontSize: 13, fontWeight: '600', color: '#CBD5E1', marginTop: 8 },
+  title: {
+    fontSize: 30,
+    fontWeight: '800',
+    color: colors.text,
+    letterSpacing: -0.4,
+  },
+  subtitle: {
+    fontSize: 15,
+    color: colors.textMuted,
+    marginBottom: 4,
+    lineHeight: 22,
+  },
+  preview: {
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 8,
+  },
+  previewClass: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.amberSoft,
+  },
+  label: { fontSize: 13, fontWeight: '600', color: colors.textMuted, marginTop: 4 },
   input: {
     minHeight: 48,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#334155',
-    backgroundColor: '#1E293B',
+    borderColor: colors.border,
+    backgroundColor: colors.bgElevated,
     paddingHorizontal: 14,
-    color: '#F8FAFC',
+    color: colors.text,
     fontSize: 16,
   },
   classRow: { gap: 10 },
   classCard: {
-    borderRadius: 12,
+    borderRadius: 14,
     borderWidth: 1,
-    borderColor: '#334155',
-    backgroundColor: '#1E293B',
-    padding: 14,
+    borderColor: colors.border,
+    backgroundColor: colors.bgElevated,
+    padding: 12,
     minHeight: 64,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
   },
   classCardSelected: {
-    borderColor: '#F59E0B',
-    backgroundColor: '#292524',
+    borderColor: colors.amber,
+    backgroundColor: colors.amberWash,
   },
-  classLabel: { fontSize: 16, fontWeight: '700', color: '#E2E8F0' },
-  classLabelSelected: { color: '#FBBF24' },
-  classBlurb: { marginTop: 4, fontSize: 13, color: '#94A3B8' },
+  classCopy: { flex: 1 },
+  classLabel: { fontSize: 16, fontWeight: '700', color: colors.text },
+  classLabelSelected: { color: colors.amberSoft },
+  classBlurb: { marginTop: 4, fontSize: 13, color: colors.textMuted },
   cta: {
     marginTop: 'auto',
     marginBottom: 16,
     minHeight: 52,
     borderRadius: 14,
-    backgroundColor: '#F59E0B',
+    backgroundColor: colors.amber,
     alignItems: 'center',
     justifyContent: 'center',
   },
   ctaDisabled: { opacity: 0.4 },
-  ctaText: { fontSize: 16, fontWeight: '800', color: '#0F172A' },
+  ctaText: { fontSize: 16, fontWeight: '800', color: colors.bg },
 });

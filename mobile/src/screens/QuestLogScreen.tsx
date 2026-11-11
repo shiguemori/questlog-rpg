@@ -3,19 +3,27 @@ import {
   FlatList,
   Pressable,
   SafeAreaView,
+  ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from 'react-native';
+import { HeroAvatar } from '../components/HeroAvatar';
+import { QuestCreateModal } from '../components/QuestCreateModal';
+import { XpBar } from '../components/XpBar';
 import {
   CATEGORIES,
   CATEGORY_LABELS,
   CLASS_DEFAULTS,
   DIFFICULTY_LABELS,
-  XP_REWARDS,
 } from '../domain/constants';
+import {
+  presetXp,
+  QUEST_PRESETS,
+  type QuestPreset,
+} from '../domain/questPresets';
 import type { AppState, Category, Difficulty, Quest } from '../domain/types';
+import { colors } from '../theme/colors';
 
 interface QuestLogScreenProps {
   state: AppState;
@@ -26,7 +34,6 @@ interface QuestLogScreenProps {
   onDismissFeedback: () => void;
 }
 
-const DIFFICULTIES: Difficulty[] = ['EASY', 'MEDIUM', 'HARD'];
 type CategoryFilter = Category | 'ALL';
 
 export function QuestLogScreen({
@@ -37,10 +44,8 @@ export function QuestLogScreen({
   onCompleteQuest,
   onDismissFeedback,
 }: QuestLogScreenProps) {
-  const [title, setTitle] = useState('');
-  const [difficulty, setDifficulty] = useState<Difficulty>('MEDIUM');
-  const [category, setCategory] = useState<Category>('OTHER');
   const [filter, setFilter] = useState<CategoryFilter>('ALL');
+  const [modalOpen, setModalOpen] = useState(false);
   const classLabel = CLASS_DEFAULTS[state.character.characterClass].label;
 
   const openQuests = useMemo(() => {
@@ -65,11 +70,8 @@ export function QuestLogScreen({
   const xpToday =
     state.stats.dailyXpCompletionsDate === today ? state.stats.dailyXpCompletions : 0;
 
-  const submit = () => {
-    const trimmed = title.trim();
-    if (!trimmed) return;
-    onAddQuest(trimmed, difficulty, category);
-    setTitle('');
+  const addPreset = (preset: QuestPreset) => {
+    onAddQuest(preset.title, preset.difficulty, preset.category);
   };
 
   const renderQuest = (quest: Quest, actionable: boolean) => (
@@ -100,20 +102,30 @@ export function QuestLogScreen({
 
   return (
     <SafeAreaView style={styles.safe}>
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.brand}>QuestLog</Text>
-          <Text style={styles.heroName}>{state.character.name}</Text>
-          <Text style={styles.heroMeta}>
-            {classLabel} · Nv. {state.character.level} · Streak {state.stats.streak}d
-          </Text>
-          <Text style={styles.heroMeta}>XP hoje: {xpToday}/10</Text>
-        </View>
-        <View style={styles.xpBox}>
-          <Text style={styles.xpLabel}>XP</Text>
-          <Text style={styles.xpValue}>
-            {state.character.xp}/{state.character.maxXp}
-          </Text>
+      <View style={styles.atmosphere} pointerEvents="none">
+        <View style={styles.glowOrb} />
+        <View style={styles.glowOrbSoft} />
+      </View>
+
+      <View style={styles.heroBlock}>
+        <Text style={styles.brand}>QuestLog</Text>
+        <View style={styles.heroRow}>
+          <HeroAvatar
+            characterClass={state.character.characterClass}
+            initial={state.character.name}
+            size={78}
+          />
+          <View style={styles.heroCopy}>
+            <Text style={styles.heroName}>{state.character.name}</Text>
+            <Text style={styles.heroMeta}>
+              {classLabel} · Streak {state.stats.streak}d · XP hoje {xpToday}/10
+            </Text>
+            <XpBar
+              xp={state.character.xp}
+              maxXp={state.character.maxXp}
+              level={state.character.level}
+            />
+          </View>
         </View>
       </View>
 
@@ -134,66 +146,26 @@ export function QuestLogScreen({
         </Pressable>
       ) : null}
 
-      <View style={styles.composer}>
-        <Text style={styles.label}>Nova quest</Text>
-        <TextInput
-          style={styles.input}
-          value={title}
-          onChangeText={setTitle}
-          placeholder="ex: Beber 2L de água"
-          placeholderTextColor="#64748B"
-          onSubmitEditing={submit}
-          returnKeyType="done"
-        />
-
-        <Text style={styles.label}>Categoria</Text>
-        <View style={styles.chipRow}>
-          {CATEGORIES.map((c) => {
-            const selected = category === c;
-            return (
-              <Pressable
-                key={c}
-                onPress={() => setCategory(c)}
-                style={[styles.chip, selected && styles.chipSelected]}
-                accessibilityRole="button"
-                accessibilityState={{ selected }}
-              >
-                <Text style={[styles.chipText, selected && styles.chipTextSelected]}>
-                  {CATEGORY_LABELS[c]}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
-
-        <Text style={styles.label}>Dificuldade</Text>
-        <View style={styles.chipRow}>
-          {DIFFICULTIES.map((d) => {
-            const selected = difficulty === d;
-            return (
-              <Pressable
-                key={d}
-                onPress={() => setDifficulty(d)}
-                style={[styles.chip, selected && styles.chipSelected]}
-                accessibilityRole="button"
-                accessibilityState={{ selected }}
-              >
-                <Text style={[styles.chipText, selected && styles.chipTextSelected]}>
-                  {DIFFICULTY_LABELS[d]} (+{XP_REWARDS[d]})
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
-
-        <Pressable
-          style={[styles.cta, !title.trim() && styles.ctaDisabled]}
-          disabled={!title.trim()}
-          onPress={submit}
-          accessibilityRole="button"
+      <View style={styles.quickBlock}>
+        <Text style={[styles.label, styles.labelPad]}>Atividades rápidas</Text>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.presetRow}
         >
-          <Text style={styles.ctaText}>Registrar quest</Text>
-        </Pressable>
+          {QUEST_PRESETS.map((preset) => (
+            <Pressable
+              key={preset.id}
+              style={styles.presetChip}
+              onPress={() => addPreset(preset)}
+              accessibilityRole="button"
+              accessibilityLabel={`Adicionar ${preset.title}`}
+            >
+              <Text style={styles.presetChipTitle}>{preset.chip}</Text>
+              <Text style={styles.presetChipMeta}>+{presetXp(preset)} XP</Text>
+            </Pressable>
+          ))}
+        </ScrollView>
       </View>
 
       <View style={styles.filterBlock}>
@@ -238,7 +210,7 @@ export function QuestLogScreen({
             {openQuests.length === 0 ? (
               <Text style={styles.empty}>
                 {filter === 'ALL'
-                  ? 'Nenhuma quest ainda. Crie a primeira acima.'
+                  ? 'Nenhuma quest ainda. Toque em um preset ou no +.'
                   : `Nenhuma quest aberta em ${CATEGORY_LABELS[filter]}.`}
               </Text>
             ) : (
@@ -253,142 +225,218 @@ export function QuestLogScreen({
           </View>
         )}
       />
+
+      <Pressable
+        style={styles.fab}
+        onPress={() => setModalOpen(true)}
+        accessibilityRole="button"
+        accessibilityLabel="Criar quest personalizada"
+      >
+        <Text style={styles.fabText}>+</Text>
+      </Pressable>
+
+      <QuestCreateModal
+        visible={modalOpen}
+        onClose={() => setModalOpen(false)}
+        onSubmit={onAddQuest}
+      />
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#0F172A' },
-  header: {
+  safe: { flex: 1, backgroundColor: colors.bg },
+  atmosphere: {
+    ...StyleSheet.absoluteFill,
+    overflow: 'hidden',
+  },
+  glowOrb: {
+    position: 'absolute',
+    top: -80,
+    right: -40,
+    width: 220,
+    height: 220,
+    borderRadius: 110,
+    backgroundColor: 'rgba(245, 158, 11, 0.12)',
+  },
+  glowOrbSoft: {
+    position: 'absolute',
+    top: 120,
+    left: -90,
+    width: 200,
+    height: 200,
+    borderRadius: 100,
+    backgroundColor: 'rgba(56, 189, 248, 0.06)',
+  },
+  heroBlock: {
     paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 12,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
+    paddingTop: 12,
+    paddingBottom: 14,
     borderBottomWidth: 1,
-    borderBottomColor: '#1E293B',
+    borderBottomColor: colors.border,
   },
   brand: {
     fontSize: 12,
-    fontWeight: '700',
-    letterSpacing: 2,
+    fontWeight: '800',
+    letterSpacing: 3,
     textTransform: 'uppercase',
-    color: '#F59E0B',
+    color: colors.amber,
+    marginBottom: 12,
   },
-  heroName: { fontSize: 22, fontWeight: '800', color: '#F8FAFC', marginTop: 4 },
-  heroMeta: { fontSize: 13, color: '#94A3B8', marginTop: 2 },
-  xpBox: {
-    backgroundColor: '#1E293B',
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+  heroRow: {
+    flexDirection: 'row',
+    gap: 14,
     alignItems: 'center',
-    minWidth: 88,
   },
-  xpLabel: { fontSize: 11, fontWeight: '700', color: '#94A3B8' },
-  xpValue: { fontSize: 14, fontWeight: '800', color: '#FBBF24', marginTop: 2 },
+  heroCopy: { flex: 1, gap: 4 },
+  heroName: {
+    fontSize: 24,
+    fontWeight: '800',
+    color: colors.text,
+    letterSpacing: -0.3,
+  },
+  heroMeta: { fontSize: 13, color: colors.textMuted, marginBottom: 6 },
   warningBanner: {
     marginHorizontal: 20,
     marginTop: 10,
-    borderRadius: 10,
-    backgroundColor: '#7F1D1D',
+    borderRadius: 12,
+    backgroundColor: colors.dangerBg,
     paddingHorizontal: 12,
     paddingVertical: 10,
   },
-  warningText: { color: '#FECACA', fontSize: 13, fontWeight: '600' },
+  warningText: { color: colors.dangerText, fontSize: 13, fontWeight: '600' },
   feedbackBanner: {
     marginHorizontal: 20,
     marginTop: 10,
-    borderRadius: 10,
-    backgroundColor: '#292524',
+    borderRadius: 12,
+    backgroundColor: colors.amberWash,
     borderWidth: 1,
-    borderColor: '#F59E0B',
+    borderColor: colors.amber,
     paddingHorizontal: 12,
     paddingVertical: 10,
   },
-  feedbackText: { color: '#FBBF24', fontSize: 13, fontWeight: '600' },
-  composer: {
-    paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 8,
-    gap: 10,
-  },
-  filterBlock: {
-    paddingHorizontal: 20,
+  feedbackText: { color: colors.amberSoft, fontSize: 13, fontWeight: '600' },
+  quickBlock: {
+    paddingTop: 14,
     paddingBottom: 4,
     gap: 8,
   },
-  label: { fontSize: 13, fontWeight: '600', color: '#CBD5E1' },
-  input: {
-    minHeight: 48,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#334155',
-    backgroundColor: '#1E293B',
+  label: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.textMuted,
+  },
+  labelPad: {
+    paddingHorizontal: 20,
+  },
+  presetRow: {
+    paddingHorizontal: 20,
+    gap: 8,
+    paddingVertical: 4,
+  },
+  presetChip: {
+    minHeight: 56,
+    minWidth: 96,
     paddingHorizontal: 14,
-    color: '#F8FAFC',
-    fontSize: 16,
+    paddingVertical: 10,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.bgSoft,
+    justifyContent: 'center',
+  },
+  presetChipTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: colors.text,
+  },
+  presetChipMeta: {
+    marginTop: 2,
+    fontSize: 11,
+    fontWeight: '600',
+    color: colors.amberSoft,
+  },
+  filterBlock: {
+    paddingHorizontal: 20,
+    paddingTop: 10,
+    paddingBottom: 4,
+    gap: 8,
   },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   chip: {
-    borderRadius: 999,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: colors.border,
     paddingHorizontal: 12,
     paddingVertical: 8,
     minHeight: 40,
     justifyContent: 'center',
   },
-  chipSelected: { borderColor: '#F59E0B', backgroundColor: '#292524' },
-  chipText: { fontSize: 13, color: '#94A3B8', fontWeight: '600' },
-  chipTextSelected: { color: '#FBBF24' },
-  cta: {
-    minHeight: 48,
-    borderRadius: 12,
-    backgroundColor: '#F59E0B',
-    alignItems: 'center',
-    justifyContent: 'center',
+  chipSelected: {
+    borderColor: colors.amber,
+    backgroundColor: colors.amberWash,
   },
-  ctaDisabled: { opacity: 0.4 },
-  ctaText: { fontSize: 15, fontWeight: '800', color: '#0F172A' },
-  list: { paddingHorizontal: 20, paddingBottom: 32 },
+  chipText: { fontSize: 13, color: colors.textMuted, fontWeight: '600' },
+  chipTextSelected: { color: colors.amberSoft },
+  list: { paddingHorizontal: 20, paddingBottom: 96 },
   section: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#94A3B8',
+    fontSize: 12,
+    fontWeight: '800',
+    color: colors.textDim,
     textTransform: 'uppercase',
-    letterSpacing: 1,
+    letterSpacing: 1.2,
     marginBottom: 10,
     marginTop: 8,
   },
   sectionSpaced: { marginTop: 20 },
-  empty: { color: '#64748B', fontSize: 14, lineHeight: 20 },
+  empty: { color: colors.textDim, fontSize: 14, lineHeight: 20 },
   questRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    backgroundColor: '#1E293B',
-    borderRadius: 12,
+    backgroundColor: colors.bgElevated,
+    borderRadius: 14,
     padding: 14,
     marginBottom: 8,
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: colors.border,
   },
   questDone: { opacity: 0.65 },
   questText: { flex: 1 },
-  questTitle: { fontSize: 15, fontWeight: '700', color: '#F8FAFC' },
-  questTitleDone: { textDecorationLine: 'line-through', color: '#94A3B8' },
-  questMeta: { marginTop: 4, fontSize: 12, color: '#94A3B8' },
+  questTitle: { fontSize: 15, fontWeight: '700', color: colors.text },
+  questTitleDone: { textDecorationLine: 'line-through', color: colors.textMuted },
+  questMeta: { marginTop: 4, fontSize: 12, color: colors.textMuted },
   completeBtn: {
     minHeight: 44,
     minWidth: 64,
     paddingHorizontal: 12,
     borderRadius: 10,
-    backgroundColor: '#F59E0B',
+    backgroundColor: colors.amber,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  completeBtnText: { fontWeight: '800', color: '#0F172A', fontSize: 13 },
-  doneBadge: { color: '#22C55E', fontWeight: '800', fontSize: 12 },
+  completeBtnText: { fontWeight: '800', color: colors.bg, fontSize: 13 },
+  doneBadge: { color: colors.success, fontWeight: '800', fontSize: 12 },
+  fab: {
+    position: 'absolute',
+    right: 20,
+    bottom: 24,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: colors.amber,
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOpacity: 0.35,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+  },
+  fabText: {
+    fontSize: 32,
+    fontWeight: '700',
+    color: colors.bg,
+    marginTop: -2,
+  },
 });

@@ -1,0 +1,23 @@
+/** Tokens de marca — docs/04-brand.md (Slate / Amber). */
+export const colors = {
+  bg: '#0F172A',
+  bgElevated: '#1E293B',
+  bgSoft: '#162032',
+  border: '#334155',
+  borderStrong: '#475569',
+  text: '#F8FAFC',
+  textMuted: '#94A3B8',
+  textDim: '#64748B',
+  amber: '#F59E0B',
+  amberSoft: '#FBBF24',
+  amberDeep: '#B45309',
+  amberWash: '#292524',
+  success: '#22C55E',
+  danger: '#F87171',
+  dangerBg: '#7F1D1D',
+  dangerText: '#FECACA',
+  overlay: 'rgba(15, 23, 42, 0.88)',
+  warrior: '#F87171',
+  mage: '#38BDF8',
+  rogue: '#A3E635',
+} as const;

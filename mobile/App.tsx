@@ -2,6 +2,7 @@ import { StatusBar } from 'expo-status-bar';
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { LevelUpOverlay } from './src/components/LevelUpOverlay';
+import { VillainDefeatOverlay } from './src/components/VillainDefeatOverlay';
 import { CLASS_DEFAULTS, XP_REWARDS } from './src/domain/constants';
 import { completeQuest } from './src/domain/completeQuest';
 import type {
@@ -11,14 +12,17 @@ import type {
   Difficulty,
   Quest,
 } from './src/domain/types';
+import { buildVictoryEvent, type QuestVictoryEvent } from './src/domain/victory';
 import { OnboardingScreen } from './src/screens/OnboardingScreen';
 import { QuestLogScreen } from './src/screens/QuestLogScreen';
 import { createInitialState, loadState, saveState } from './src/storage/persist';
+import { colors } from './src/theme/colors';
 
 export default function App() {
   const [state, setState] = useState<AppState | null>(null);
   const [loadError, setLoadError] = useState(false);
   const [levelUpLevel, setLevelUpLevel] = useState<number | null>(null);
+  const [victoryEvent, setVictoryEvent] = useState<QuestVictoryEvent | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
 
   useEffect(() => {
@@ -52,7 +56,7 @@ export default function App() {
   if (!state) {
     return (
       <View style={styles.boot}>
-        <ActivityIndicator color="#F59E0B" size="large" />
+        <ActivityIndicator color={colors.amber} size="large" />
         <StatusBar style="light" />
       </View>
     );
@@ -88,19 +92,34 @@ export default function App() {
 
   const handleCompleteQuest = (id: string) => {
     if (!state) return;
+    const quest = state.quests.find((q) => q.id === id);
     const result = completeQuest(state, id);
-    if (!result) return;
+    if (!result || !quest) return;
 
     setState(result.state);
 
-    if (result.leveledUp && result.newLevel != null) {
-      setLevelUpLevel(result.newLevel);
-    } else if (result.denyReason === 'TOO_FAST') {
+    setVictoryEvent(
+      buildVictoryEvent({
+        questTitle: quest.title,
+        xpAwarded: result.xpAwarded,
+        denyReason: result.denyReason,
+        leveledUp: result.leveledUp,
+        newLevel: result.newLevel,
+      }),
+    );
+
+    if (result.denyReason === 'TOO_FAST') {
       setFeedback('Quest concluída sem XP — espere 1 minuto após criar.');
     } else if (result.denyReason === 'DAILY_LIMIT') {
       setFeedback('Limite diário de 10 quests com XP. A quest foi marcada como feita.');
-    } else if (result.xpAwarded > 0) {
-      setFeedback(`+${result.xpAwarded} XP conquistados!`);
+    }
+  };
+
+  const dismissVictory = () => {
+    const pendingLevel = victoryEvent?.leveledUp ? victoryEvent.newLevel : null;
+    setVictoryEvent(null);
+    if (pendingLevel != null) {
+      setLevelUpLevel(pendingLevel);
     }
   };
 
@@ -119,6 +138,7 @@ export default function App() {
       ) : (
         <OnboardingScreen onComplete={handleOnboarding} />
       )}
+      <VillainDefeatOverlay event={victoryEvent} onDismiss={dismissVictory} />
       <LevelUpOverlay
         visible={levelUpLevel != null}
         level={levelUpLevel ?? state.character.level}
@@ -132,7 +152,7 @@ export default function App() {
 const styles = StyleSheet.create({
   boot: {
     flex: 1,
-    backgroundColor: '#0F172A',
+    backgroundColor: colors.bg,
     alignItems: 'center',
     justifyContent: 'center',
   },
