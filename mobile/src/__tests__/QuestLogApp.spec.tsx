@@ -30,6 +30,20 @@ jest.mock('expo-haptics', () => ({
 
 const START = new Date(2026, 10, 11, 9, 0, 0);
 
+/**
+ * Só o relógio do app é falso (setTimeout, setInterval, Date, animação).
+ * setImmediate/nextTick/queueMicrotask ficam reais: com eles falsos, todo teste
+ * depois do primeiro travava até o timeout no Node 22 (o do CI), embora passasse
+ * no Node 24. Causa provável: o `act` do React guarda `timers.setImmediate` no
+ * primeiro uso e fica preso ao relógio falso do teste anterior.
+ */
+function useAppFakeTimers() {
+  jest.useFakeTimers({
+    doNotFake: ['setImmediate', 'clearImmediate', 'nextTick', 'queueMicrotask'],
+  });
+  jest.setSystemTime(START);
+}
+
 async function advance(ms: number) {
   await act(async () => {
     jest.advanceTimersByTime(ms);
@@ -69,8 +83,7 @@ describe('QuestLogApp — fluxo no aparelho', () => {
   let alertSpy: jest.SpyInstance;
 
   beforeEach(() => {
-    jest.useFakeTimers();
-    jest.setSystemTime(START);
+    useAppFakeTimers();
     alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
   });
 
@@ -242,8 +255,7 @@ describe('QuestLogApp — fluxo no aparelho', () => {
 
 describe('App — armazenamento nativo ausente (bug P0 do Expo Go)', () => {
   beforeEach(() => {
-    jest.useFakeTimers();
-    jest.setSystemTime(START);
+    useAppFakeTimers();
   });
 
   afterEach(() => {

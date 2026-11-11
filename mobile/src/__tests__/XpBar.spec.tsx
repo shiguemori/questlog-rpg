@@ -16,7 +16,10 @@ async function finishAnimations() {
 
 describe('XpBar', () => {
   beforeEach(() => {
-    jest.useFakeTimers();
+    // Mesmo recorte do QuestLogApp.spec: só o relógio do app é falso (ver comentário lá).
+    jest.useFakeTimers({
+      doNotFake: ['setImmediate', 'clearImmediate', 'nextTick', 'queueMicrotask'],
+    });
   });
 
   afterEach(() => {
