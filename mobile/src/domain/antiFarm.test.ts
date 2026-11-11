@@ -28,6 +28,9 @@ const baseStats: UserStats = {
   totalQuestsCompleted: 0,
   dailyXpCompletions: 0,
   dailyXpCompletionsDate: null,
+  dailyCompletions: 0,
+  dailyCompletionsDate: null,
+  completionDays: [],
 };
 
 describe('evaluateXpEligibility', () => {

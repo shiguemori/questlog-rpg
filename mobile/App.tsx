@@ -1,5 +1,5 @@
 import { StatusBar } from 'expo-status-bar';
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { ErrorBoundary } from './src/components/ErrorBoundary';
@@ -7,6 +7,7 @@ import { LevelUpOverlay } from './src/components/LevelUpOverlay';
 import { VillainDefeatOverlay } from './src/components/VillainDefeatOverlay';
 import { XP_DENY_COPY } from './src/domain/antiFarm';
 import { completeQuest } from './src/domain/completeQuest';
+import { celebrationLine, UNDO_COMPLETION_MS } from './src/domain/engagement';
 import { newlyUnlockedAchievements, spendAttributePoint } from './src/domain/progression';
 import {
   addQuest,
@@ -47,6 +48,18 @@ export function QuestLogApp({ store = stateStore }: QuestLogAppProps) {
   const [levelUpLevel, setLevelUpLevel] = useState<number | null>(null);
   const [victoryEvent, setVictoryEvent] = useState<QuestVictoryEvent | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [undoState, setUndoState] = useState<AppState | null>(null);
+  const undoRef = useRef<AppState | null>(null);
+  const stateRef = useRef<AppState | null>(null);
+
+  useEffect(() => {
+    stateRef.current = state;
+  }, [state]);
+
+  const clearUndo = useCallback(() => {
+    undoRef.current = null;
+    setUndoState(null);
+  }, []);
 
   // Hidratação: `load` nunca rejeita, então o app sempre sai do boot.
   useEffect(() => {
@@ -83,82 +96,122 @@ export function QuestLogApp({ store = stateStore }: QuestLogAppProps) {
     return () => clearTimeout(timer);
   }, [feedback]);
 
+  useEffect(() => {
+    if (!undoState) return undefined;
+    const timer = setTimeout(() => {
+      undoRef.current = null;
+      setUndoState(null);
+    }, UNDO_COMPLETION_MS);
+    return () => clearTimeout(timer);
+  }, [undoState]);
+
   const handleOnboarding = useCallback((name: string, characterClass: CharacterClass) => {
     setState(startJourney(name, characterClass));
   }, []);
 
   const handleAddQuest = useCallback(
     (input: NewQuestInput): string | null => {
-      if (!state) return null;
-      const result = addQuest(state, input);
+      const current = stateRef.current;
+      if (!current) return null;
+      const result = addQuest(current, input);
       if (!result.ok) return result.message;
+      clearUndo();
       setState(result.state);
       announce('Quest registrada. O XP libera em 1 minuto.');
       return null;
     },
-    [state],
+    [clearUndo],
   );
 
-  const handleCompleteQuest = useCallback(
-    (questId: string) => {
-      if (!state) return;
-      const quest = state.quests.find((q) => q.id === questId);
-      const result = completeQuest(state, questId);
-      if (!result || !quest) return;
-
-      setState(result.state);
-
-      const event = buildVictoryEvent({
-        questTitle: quest.title,
-        category: quest.category,
-        xpAwarded: result.xpAwarded,
-        denyReason: result.denyReason,
-        leveledUp: result.leveledUp,
-        newLevel: result.newLevel,
-      });
-      setVictoryEvent(event);
-
-      if (event.outcome === 'VICTORY') {
-        playHaptic('SUCCESS');
-        announce(`Quest concluída. Mais ${result.xpAwarded} de XP.`);
-      } else {
-        playHaptic('WARNING');
-        announce(
-          result.denyReason ? XP_DENY_COPY[result.denyReason] : 'Quest concluída sem XP.',
-        );
-      }
-
-      const unlocked = newlyUnlockedAchievements(state, result.state);
-      if (unlocked.length > 0) {
-        setFeedback(`Conquista desbloqueada: ${unlocked.map((a) => a.title).join(', ')}`);
-      }
-    },
-    [state],
-  );
-
-  const handleDeleteQuest = useCallback((questId: string) => {
-    setState((current) => (current ? deleteQuest(current, questId) : current));
-  }, []);
-
-  const handleClearCompleted = useCallback(() => {
-    setState((current) => (current ? clearCompletedQuests(current) : current));
-  }, []);
-
-  const handleSpendAttributePoint = useCallback((attribute: AttributeKey) => {
-    setState((current) => {
-      if (!current) return current;
-      return spendAttributePoint(current, attribute) ?? current;
-    });
+  const handleUndo = useCallback(() => {
+    const snapshot = undoRef.current;
+    if (!snapshot) return;
+    undoRef.current = null;
+    setUndoState(null);
+    setVictoryEvent(null);
+    setLevelUpLevel(null);
+    setState(snapshot);
+    setFeedback('Conclusão desfeita. XP e streak voltaram.');
+    announce('Conclusão desfeita. XP e streak voltaram.');
     playHaptic('TAP');
   }, []);
 
+  const handleCompleteQuest = useCallback((questId: string) => {
+    const current = stateRef.current;
+    if (!current) return;
+    const quest = current.quests.find((item) => item.id === questId);
+    const result = completeQuest(current, questId);
+    if (!result || !quest) return;
+
+    undoRef.current = current;
+    setUndoState(current);
+    setState(result.state);
+
+    const habitLine = celebrationLine({
+      dailyGoalJustMet: result.dailyGoalJustMet,
+      milestone: result.streakMilestone,
+    });
+    const event = buildVictoryEvent({
+      questTitle: quest.title,
+      category: quest.category,
+      xpAwarded: result.xpAwarded,
+      denyReason: result.denyReason,
+      leveledUp: result.leveledUp,
+      newLevel: result.newLevel,
+      habitLine,
+    });
+    setVictoryEvent(event);
+
+    const spoken = habitLine ? ` ${habitLine}` : '';
+    if (event.outcome === 'VICTORY') {
+      playHaptic('SUCCESS');
+      announce(`Quest concluída. Mais ${result.xpAwarded} de XP.${spoken}`);
+    } else {
+      playHaptic('WARNING');
+      announce(
+        `${result.denyReason ? XP_DENY_COPY[result.denyReason] : 'Quest concluída sem XP.'}${spoken}`,
+      );
+    }
+
+    const unlocked = newlyUnlockedAchievements(current, result.state);
+    if (unlocked.length > 0) {
+      setFeedback(`Conquista desbloqueada: ${unlocked.map((item) => item.title).join(', ')}`);
+    }
+  }, []);
+
+  const handleDeleteQuest = useCallback(
+    (questId: string) => {
+      clearUndo();
+      setState((current) => (current ? deleteQuest(current, questId) : current));
+    },
+    [clearUndo],
+  );
+
+  const handleClearCompleted = useCallback(() => {
+    clearUndo();
+    setState((current) => (current ? clearCompletedQuests(current) : current));
+  }, [clearUndo]);
+
+  const handleSpendAttributePoint = useCallback(
+    (attribute: AttributeKey) => {
+      clearUndo();
+      setState((current) => {
+        if (!current) return current;
+        return spendAttributePoint(current, attribute) ?? current;
+      });
+      playHaptic('TAP');
+    },
+    [clearUndo],
+  );
+
   const handleResetJourney = useCallback(() => {
+    clearUndo();
     setVictoryEvent(null);
     setLevelUpLevel(null);
     setFeedback(null);
     void store.clear();
     setState(createInitialState());
-  }, [store]);
+  }, [store, clearUndo]);
 
   const dismissFeedback = useCallback(() => setFeedback(null), []);
   const dismissStorageNotice = useCallback(() => setStorageNotice(null), []);
@@ -191,16 +244,23 @@ export function QuestLogApp({ store = stateStore }: QuestLogAppProps) {
           onResetJourney={handleResetJourney}
           onDismissFeedback={dismissFeedback}
           onDismissStorageNotice={dismissStorageNotice}
+          canUndo={undoState != null}
+          onUndo={handleUndo}
         />
       ) : (
         <OnboardingScreen onComplete={handleOnboarding} />
       )}
-      <VillainDefeatOverlay event={victoryEvent} onDismiss={dismissVictory} />
+      <VillainDefeatOverlay
+        event={victoryEvent}
+        onDismiss={dismissVictory}
+        onUndo={undoState ? handleUndo : undefined}
+      />
       <LevelUpOverlay
         visible={levelUpLevel != null}
         level={levelUpLevel ?? state.character.level}
         heroName={state.character.name || DEFAULT_HERO_NAME}
         onDismiss={() => setLevelUpLevel(null)}
+        onUndo={undoState ? handleUndo : undefined}
       />
     </>
   );

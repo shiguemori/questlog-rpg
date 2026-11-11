@@ -18,6 +18,7 @@ interface LevelUpOverlayProps {
   level: number;
   heroName: string;
   onDismiss: () => void;
+  onUndo?: () => void;
 }
 
 /**
@@ -29,6 +30,7 @@ export function LevelUpOverlay({
   level,
   heroName,
   onDismiss,
+  onUndo,
 }: LevelUpOverlayProps) {
   const reduceMotion = useReducedMotion();
   const opacity = useAnimatedValue(0);
@@ -81,6 +83,16 @@ export function LevelUpOverlay({
           >
             <Text style={styles.ctaText}>Continuar aventura</Text>
           </Pressable>
+          {onUndo ? (
+            <Pressable
+              style={styles.undo}
+              onPress={onUndo}
+              accessibilityRole="button"
+              accessibilityLabel="Desfazer esta conclusão"
+            >
+              <Text style={styles.undoText}>Desfazer</Text>
+            </Pressable>
+          ) : null}
         </Animated.View>
       </View>
     </Modal>
@@ -147,4 +159,10 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: '#0F172A',
   },
+  undo: {
+    marginTop: 8,
+    minHeight: 44,
+    justifyContent: 'center',
+  },
+  undoText: { fontSize: 14, fontWeight: '700', color: '#94A3B8' },
 });

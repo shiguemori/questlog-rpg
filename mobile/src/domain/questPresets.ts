@@ -13,6 +13,13 @@ export interface QuestPreset {
 
 export const QUEST_PRESETS: readonly QuestPreset[] = [
   {
+    id: 'water',
+    title: 'Beber água',
+    category: 'HEALTH',
+    difficulty: 'EASY',
+    chip: 'Rápida',
+  },
+  {
     id: 'study-25',
     title: 'Estudar 25min',
     category: 'STUDY',
@@ -25,13 +32,6 @@ export const QUEST_PRESETS: readonly QuestPreset[] = [
     category: 'HEALTH',
     difficulty: 'HARD',
     chip: 'Treino',
-  },
-  {
-    id: 'water',
-    title: 'Beber água',
-    category: 'HEALTH',
-    difficulty: 'EASY',
-    chip: 'Água',
   },
   {
     id: 'walk',

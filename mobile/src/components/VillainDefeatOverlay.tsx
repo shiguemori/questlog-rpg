@@ -17,6 +17,8 @@ import { colors } from '../theme/colors';
 export interface VillainDefeatOverlayProps {
   event: QuestVictoryEvent | null;
   onDismiss: () => void;
+  /** Desfaz a conclusão enquanto a janela de 5s estiver aberta. */
+  onUndo?: () => void;
 }
 
 const EASE_OUT = Easing.bezier(0.23, 1, 0.32, 1);
@@ -30,6 +32,7 @@ const EASE_OUT = Easing.bezier(0.23, 1, 0.32, 1);
 export function VillainDefeatOverlay({
   event,
   onDismiss,
+  onUndo,
 }: VillainDefeatOverlayProps) {
   const visible = event != null;
   const reduceMotion = useReducedMotion();
@@ -177,6 +180,7 @@ export function VillainDefeatOverlay({
               {denyCopy ?? 'Concluída sem XP desta vez.'}
             </Text>
           )}
+          {event.habitLine ? <Text style={styles.habit}>{event.habitLine}</Text> : null}
 
           <Pressable
             style={styles.cta}
@@ -188,6 +192,16 @@ export function VillainDefeatOverlay({
               {isVictory ? 'Continuar' : 'Entendi'}
             </Text>
           </Pressable>
+          {onUndo ? (
+            <Pressable
+              style={styles.undo}
+              onPress={onUndo}
+              accessibilityRole="button"
+              accessibilityLabel="Desfazer esta conclusão"
+            >
+              <Text style={styles.undoText}>Desfazer</Text>
+            </Pressable>
+          ) : null}
         </Animated.View>
       </View>
     </Modal>
@@ -319,6 +333,14 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     textAlign: 'center',
   },
+  habit: {
+    marginTop: 8,
+    fontSize: 14,
+    lineHeight: 20,
+    fontWeight: '700',
+    color: colors.amberSoft,
+    textAlign: 'center',
+  },
   cta: {
     marginTop: 22,
     minHeight: 48,
@@ -334,4 +356,12 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: colors.bg,
   },
+  undo: {
+    marginTop: 8,
+    minHeight: 44,
+    minWidth: 180,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  undoText: { fontSize: 14, fontWeight: '700', color: colors.textMuted },
 });

@@ -1,12 +1,30 @@
 import type { AppState, AttributeKey } from './types';
 
+const HERO_RANKS: readonly { level: number; title: string }[] = [
+  { level: 1, title: 'Aprendiz' },
+  { level: 3, title: 'Aventureiro' },
+  { level: 6, title: 'Veterano' },
+  { level: 10, title: 'Campeão' },
+  { level: 15, title: 'Lenda' },
+];
+
 /** Título do herói conforme o nível — recompensa de identidade, sem asset. */
 export function heroRankForLevel(level: number): string {
-  if (level >= 15) return 'Lenda';
-  if (level >= 10) return 'Campeão';
-  if (level >= 6) return 'Veterano';
-  if (level >= 3) return 'Aventureiro';
-  return 'Aprendiz';
+  const safe = Number.isFinite(level) ? Math.floor(level) : 1;
+  let title = HERO_RANKS[0].title;
+  for (const rank of HERO_RANKS) {
+    if (safe >= rank.level) title = rank.title;
+  }
+  return title;
+}
+
+/** Quantos níveis faltam para o próximo título. No topo, a frase fecha a jornada. */
+export function nextRankHint(level: number): string {
+  const safe = Number.isFinite(level) ? Math.max(1, Math.floor(level)) : 1;
+  const next = HERO_RANKS.find((rank) => rank.level > safe);
+  if (!next) return 'Você é Lenda. O hábito é a recompensa.';
+  const left = next.level - safe;
+  return left === 1 ? `Mais 1 nível para ${next.title}.` : `Mais ${left} níveis para ${next.title}.`;
 }
 
 /**

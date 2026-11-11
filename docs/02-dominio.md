@@ -6,7 +6,7 @@ Fonte de verdade no app: `mobile/src/domain/*`.
 
 - **Character** — `name`, `characterClass`, `level`, `xp`, `maxXp`, `attributes`, `attributePoints`
 - **Quest** — `id`, `title`, `category`, `difficulty`, `xp`, `completed`, `createdAt` (ISO-8601), `completedAt?` (ISO-8601)
-- **UserStats** — `streak`, `bestStreak`, `lastCompletedDate` (`YYYY-MM-DD` \| null), totais, `dailyXpCompletions`, `dailyXpCompletionsDate`
+- **UserStats** — `streak`, `bestStreak`, `lastCompletedDate` (`YYYY-MM-DD` \| null), totais, `dailyXpCompletions`, `dailyXpCompletionsDate`, `dailyCompletions`, `dailyCompletionsDate`, `completionDays` (até 120 dias `YYYY-MM-DD`)
 - **Category** — `STUDY` \| `WORK` \| `HEALTH` \| `HOME` \| `OTHER`
 
 ## Regras
@@ -19,6 +19,8 @@ Fonte de verdade no app: `mobile/src/domain/*`.
 
 - Level up: enquanto `xp >= maxXp`, sobe nível; `maxXp = floor(maxXp * 1.5)`; +2 pontos de atributo.
 - Streak: dias consecutivos com pelo menos 1 quest concluída.
+- Meta do dia: 1 conclusão (com ou sem XP). O anti-farm não muda: XP só depois de 1 min e no máximo 10 quests com XP por dia.
+- Desfazer conclusão: por 5 s o app restaura o estado anterior (XP, streak, meta e log).
 - Anti-farm (`completeQuest` + `antiFarm`):
   - máx. 10 quests com XP por dia civil;
   - quest concluída com menos de 1 min desde `createdAt` não gera XP (ainda assim marca como concluída).
@@ -34,7 +36,8 @@ Fonte de verdade no app: `mobile/src/domain/*`.
 
 | Arquivo | O que decide |
 |---------|--------------|
-| `completeQuest.ts` | Concluir quest: anti-farm → XP → nível → streak |
+| `completeQuest.ts` | Concluir quest: anti-farm → XP → nível → streak → meta do dia |
+| `engagement.ts` | Meta, ritual de retorno, marcos de streak, semana e repetir quest |
 | `quests.ts` | Validar título, registrar, excluir, limpar, separar abertas/concluídas |
 | `progression.ts` | Título do herói, gasto de atributo, conquistas |
 | `state.ts` | Estado inicial, início da jornada, validação/migração do save |

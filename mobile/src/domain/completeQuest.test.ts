@@ -37,6 +37,9 @@ function makeState(overrides: Partial<AppState> = {}): AppState {
       totalQuestsCompleted: 0,
       dailyXpCompletions: 0,
       dailyXpCompletionsDate: null,
+      dailyCompletions: 0,
+      dailyCompletionsDate: null,
+      completionDays: [],
     },
     ...overrides,
   };
@@ -79,6 +82,9 @@ describe('completeQuest', () => {
     assert.equal(result.denyReason, 'TOO_FAST');
     assert.equal(result.state.character.xp, 80);
     assert.equal(result.state.stats.dailyXpCompletions, 0);
+    assert.equal(result.state.stats.dailyCompletions, 1);
+    assert.equal(result.dailyGoalJustMet, true);
+    assert.equal(result.xpAwarded, 0);
   });
 
   it('retorna null para quest inexistente', () => {
@@ -196,6 +202,58 @@ describe('completeQuest', () => {
     assert.ok(result);
     assert.equal(result.state.stats.streak, 1);
     assert.equal(result.state.stats.bestStreak, 5);
+    assert.equal(result.streakMilestone, null);
+    assert.equal(result.dailyGoalJustMet, true);
+  });
+
+  it('fecha a meta sem furar o anti-farm e marca o marco de 3 dias', () => {
+    const now = new Date('2026-11-11T10:05:00.000Z');
+    const today = localIsoDate(now);
+    const base = makeState();
+    const first = completeQuest(
+      makeState({
+        stats: {
+          ...base.stats,
+          streak: 2,
+          bestStreak: 2,
+          lastCompletedDate: '2026-11-10',
+        },
+      }),
+      'q1',
+      now,
+    );
+    assert.ok(first);
+    assert.equal(first.state.stats.streak, 3);
+    assert.equal(first.streakMilestone?.days, 3);
+    assert.equal(first.dailyGoalJustMet, true);
+    assert.equal(first.state.stats.dailyXpCompletions, 1);
+    assert.deepEqual(first.state.stats.completionDays, [today]);
+
+    const again = completeQuest(
+      {
+        ...first.state,
+        quests: [
+          ...first.state.quests,
+          {
+            id: 'q2',
+            title: 'Outra',
+            category: 'OTHER',
+            difficulty: 'EASY',
+            xp: 10,
+            completed: false,
+            createdAt: '2026-11-11T10:00:00.000Z',
+          },
+        ],
+      },
+      'q2',
+      now,
+    );
+    assert.ok(again);
+    assert.equal(again.dailyGoalJustMet, false);
+    assert.equal(again.streakMilestone, null);
+    assert.equal(again.state.stats.dailyCompletions, 2);
+    assert.equal(again.state.stats.dailyXpCompletions, 2);
+    assert.deepEqual(again.state.stats.completionDays, [today]);
   });
 
   it('não muta o estado recebido', () => {

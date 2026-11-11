@@ -3,6 +3,7 @@ import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'rea
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import appConfig from '../../app.json';
 import { ATTRIBUTE_KEYS, ATTRIBUTE_LABELS, CLASS_DEFAULTS } from '../domain/constants';
+import { streakTitle } from '../domain/engagement';
 import { ACHIEVEMENTS, heroRankForLevel } from '../domain/progression';
 import type { AppState, AttributeKey } from '../domain/types';
 import { useReducedMotion } from '../platform/feedback';
@@ -51,6 +52,9 @@ export function HeroSheet({
     { label: 'XP total', value: String(stats.totalXpEarned) },
     { label: 'Quests concluídas', value: String(stats.totalQuestsCompleted) },
     { label: 'Streak atual', value: `${stats.streak}d` },
+    ...(streakTitle(stats.streak)
+      ? [{ label: 'Título do streak', value: streakTitle(stats.streak) as string }]
+      : []),
     { label: 'Melhor streak', value: `${stats.bestStreak}d` },
   ];
 

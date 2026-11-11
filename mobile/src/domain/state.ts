@@ -1,4 +1,5 @@
 import { CATEGORIES, CLASS_DEFAULTS, INITIAL_MAX_XP, XP_REWARDS } from './constants';
+import { backfillCompletionDays, COMPLETION_DAY_CAP } from './engagement';
 import type {
   AppState,
   Attributes,
@@ -39,6 +40,9 @@ export function createInitialState(): AppState {
       totalQuestsCompleted: 0,
       dailyXpCompletions: 0,
       dailyXpCompletionsDate: null,
+      dailyCompletions: 0,
+      dailyCompletionsDate: null,
+      completionDays: [],
     },
   };
 }
@@ -140,19 +144,35 @@ function sanitizeQuests(raw: unknown): Quest[] {
   return quests;
 }
 
+function sanitizeCompletionDays(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  const days = new Set<string>();
+  for (const entry of raw) {
+    if (typeof entry === 'string' && ISO_DAY.test(entry)) days.add(entry);
+  }
+  return [...days].sort().slice(-COMPLETION_DAY_CAP);
+}
+
 function sanitizeStats(raw: unknown): UserStats {
   const base = createInitialState().stats;
   if (!isRecord(raw)) return base;
   const streak = toCount(raw.streak, 0);
+  const lastCompletedDate = toIsoDay(raw.lastCompletedDate);
   const dailyXpCompletionsDate = toIsoDay(raw.dailyXpCompletionsDate);
+  const dailyCompletionsDate = toIsoDay(raw.dailyCompletionsDate);
+  const storedDays = sanitizeCompletionDays(raw.completionDays);
   return {
     streak,
     bestStreak: Math.max(streak, toCount(raw.bestStreak, 0)),
-    lastCompletedDate: toIsoDay(raw.lastCompletedDate),
+    lastCompletedDate,
     totalXpEarned: toCount(raw.totalXpEarned, 0),
     totalQuestsCompleted: toCount(raw.totalQuestsCompleted, 0),
     dailyXpCompletions: dailyXpCompletionsDate ? toCount(raw.dailyXpCompletions, 0) : 0,
     dailyXpCompletionsDate,
+    dailyCompletions: dailyCompletionsDate ? toCount(raw.dailyCompletions, 0) : 0,
+    dailyCompletionsDate,
+    completionDays:
+      storedDays.length > 0 ? storedDays : backfillCompletionDays(lastCompletedDate, streak),
   };
 }
 

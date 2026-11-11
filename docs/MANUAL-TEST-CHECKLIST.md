@@ -88,7 +88,16 @@ npx expo start -c      # -c limpa o cache do Metro (as dependências mudaram)
 - [ ] Teclado sobe o modal de criação junto.
 - [ ] Háptico de sucesso ao ganhar XP e ao subir de nível.
 
-## 9. Visual
+## 9. Hábito (engajamento)
+
+- [ ] Onboarding mostra "O hábito cabe num minuto" e o botão **Pular** entra com o herói "Herói".
+- [ ] Cabeçalho mostra `Meta 0/1`, uma frase de retorno e a semana de 7 dias.
+- [ ] Concluir 1 quest (mesmo sem XP, se confirmar) muda para `Meta 1/1` e a frase aponta para amanhã. O XP **não** sobe se foi antes de 1 min.
+- [ ] Na cena, "Desfazer" em até 5 s devolve XP, streak e a meta. Depois disso o botão some.
+- [ ] O primeiro atalho é "Rápida" (Beber água). Depois de criar uma quest, "De novo" repete a última.
+- [ ] Nada disso dispara notificação.
+
+## 10. Visual
 
 - [ ] Paleta Slate/Âmbar em todas as telas (nada roxo, nada branco ou preto puros).
 - [ ] Estados cobertos: carregando (esqueleto), vazio (texto + "Criar quest"), erro (faixa vermelha), sucesso (cena / aviso âmbar).

@@ -46,6 +46,15 @@ export interface UserStats {
   dailyXpCompletions: number;
   /** Dia civil (YYYY-MM-DD) da contagem anti-farm diária. */
   dailyXpCompletionsDate: string | null;
+  /**
+   * Quests concluídas hoje (com ou sem XP). A meta diária usa isto.
+   * O anti-farm continua só em `dailyXpCompletions`.
+   */
+  dailyCompletions: number;
+  /** Dia civil (YYYY-MM-DD) de `dailyCompletions`. */
+  dailyCompletionsDate: string | null;
+  /** Dias civis com pelo menos uma conclusão. Teto 120, do mais antigo ao mais novo. */
+  completionDays: string[];
 }
 
 export interface AppState {

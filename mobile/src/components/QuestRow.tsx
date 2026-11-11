@@ -1,4 +1,4 @@
-import React, { memo, useEffect, useState } from 'react';
+import React, { memo } from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { msUntilXpEligible } from '../domain/antiFarm';
 import { CATEGORY_LABELS, DIFFICULTY_LABELS } from '../domain/constants';
@@ -7,34 +7,19 @@ import { colors } from '../theme/colors';
 
 export interface QuestRowProps {
   quest: Quest;
+  /**
+   * Relógio compartilhado da lista. 0 = quest já liberada ou concluída
+   * (a linha não precisa re-renderizar a cada segundo).
+   */
+  nowMs: number;
   onComplete: (questId: string) => void;
   onDelete: (questId: string) => void;
 }
 
-/**
- * Milissegundos até a quest poder gerar XP (anti-farm: 1 min após criar).
- * Só mantém um timer ligado enquanto a quest está em espera.
- */
-function useXpUnlockCountdown(quest: Quest): number {
-  // O "agora" é o único estado; o tempo restante é derivado dele a cada render.
-  const [nowMs, setNowMs] = useState(() => Date.now());
-
-  useEffect(() => {
-    if (quest.completed || msUntilXpEligible(quest, Date.now()) <= 0) return undefined;
-
-    const timer = setInterval(() => {
-      const current = Date.now();
-      setNowMs(current);
-      if (msUntilXpEligible(quest, current) <= 0) clearInterval(timer);
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [quest]);
-
-  return quest.completed ? 0 : msUntilXpEligible(quest, nowMs);
-}
-
-function QuestRowBase({ quest, onComplete, onDelete }: QuestRowProps) {
-  const remainingMs = useXpUnlockCountdown(quest);
+function QuestRowBase({ quest, nowMs, onComplete, onDelete }: QuestRowProps) {
+  // nowMs 0 = a lista já sabe que esta linha não está em contagem.
+  const remainingMs =
+    quest.completed || nowMs <= 0 ? 0 : msUntilXpEligible(quest, nowMs);
   const waitingForXp = !quest.completed && remainingMs > 0;
   const secondsLeft = Math.ceil(remainingMs / 1000);
 

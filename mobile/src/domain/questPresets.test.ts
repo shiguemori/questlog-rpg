@@ -14,6 +14,12 @@ describe('questPresets', () => {
     }
   });
 
+  it('coloca a vitória rápida no primeiro atalho', () => {
+    assert.equal(QUEST_PRESETS[0].id, 'water');
+    assert.equal(QUEST_PRESETS[0].chip, 'Rápida');
+    assert.equal(QUEST_PRESETS[0].difficulty, 'EASY');
+  });
+
   it('findPreset resolve e falha com id desconhecido', () => {
     assert.equal(findPreset('water')?.title, 'Beber água');
     assert.equal(findPreset('missing'), undefined);
