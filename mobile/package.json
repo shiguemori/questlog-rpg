@@ -21,7 +21,7 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "typecheck": "tsc --noEmit",
-    "test": "npx tsx --test src/domain/xp.test.ts"
+    "test": "npx tsx --test src/domain/xp.test.ts src/domain/antiFarm.test.ts src/domain/completeQuest.test.ts"
   },
   "private": true
 }

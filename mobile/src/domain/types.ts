@@ -34,6 +34,10 @@ export interface UserStats {
   lastCompletedDate: string | null;
   totalXpEarned: number;
   totalQuestsCompleted: number;
+  /** Contagem de quests que geraram XP no dia `dailyXpCompletionsDate`. */
+  dailyXpCompletions: number;
+  /** Dia civil (YYYY-MM-DD) da contagem anti-farm diária. */
+  dailyXpCompletionsDate: string | null;
 }
 
 export interface AppState {

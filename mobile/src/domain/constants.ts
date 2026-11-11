@@ -1,10 +1,20 @@
-import type { Attributes, CharacterClass, Difficulty } from './types';
+import type { Attributes, Category, CharacterClass, Difficulty } from './types';
 
 export const XP_REWARDS: Record<Difficulty, number> = {
   EASY: 10,
   MEDIUM: 25,
   HARD: 50,
 };
+
+export const CATEGORY_LABELS: Record<Category, string> = {
+  STUDY: 'Estudo',
+  WORK: 'Trabalho',
+  HEALTH: 'Saúde',
+  HOME: 'Casa',
+  OTHER: 'Outro',
+};
+
+export const CATEGORIES: Category[] = ['STUDY', 'WORK', 'HEALTH', 'HOME', 'OTHER'];
 
 export const INITIAL_MAX_XP = 100;
 export const XP_GROWTH_FACTOR = 1.5;

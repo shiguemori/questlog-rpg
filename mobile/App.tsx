@@ -1,21 +1,38 @@
 import { StatusBar } from 'expo-status-bar';
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
+import { LevelUpOverlay } from './src/components/LevelUpOverlay';
 import { CLASS_DEFAULTS, XP_REWARDS } from './src/domain/constants';
-import type { AppState, CharacterClass, Difficulty, Quest } from './src/domain/types';
-import { applyXp, nextStreak } from './src/domain/xp';
+import { completeQuest } from './src/domain/completeQuest';
+import type {
+  AppState,
+  Category,
+  CharacterClass,
+  Difficulty,
+  Quest,
+} from './src/domain/types';
 import { OnboardingScreen } from './src/screens/OnboardingScreen';
 import { QuestLogScreen } from './src/screens/QuestLogScreen';
 import { createInitialState, loadState, saveState } from './src/storage/persist';
 
 export default function App() {
   const [state, setState] = useState<AppState | null>(null);
+  const [loadError, setLoadError] = useState(false);
+  const [levelUpLevel, setLevelUpLevel] = useState<number | null>(null);
+  const [feedback, setFeedback] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    loadState().then((loaded) => {
-      if (!cancelled) setState(loaded);
-    });
+    loadState()
+      .then((loaded) => {
+        if (!cancelled) setState(loaded);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setState(createInitialState());
+          setLoadError(true);
+        }
+      });
     return () => {
       cancelled = true;
     };
@@ -25,6 +42,12 @@ export default function App() {
     if (!state) return;
     void saveState(state);
   }, [state]);
+
+  useEffect(() => {
+    if (!feedback) return;
+    const timer = setTimeout(() => setFeedback(null), 4200);
+    return () => clearTimeout(timer);
+  }, [feedback]);
 
   if (!state) {
     return (
@@ -49,53 +72,36 @@ export default function App() {
     });
   };
 
-  const handleAddQuest = (title: string, difficulty: Difficulty) => {
+  const handleAddQuest = (title: string, difficulty: Difficulty, category: Category) => {
     const quest: Quest = {
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       title,
-      category: 'OTHER',
+      category,
       difficulty,
       xp: XP_REWARDS[difficulty],
       completed: false,
       createdAt: new Date().toISOString(),
     };
     setState((prev) => (prev ? { ...prev, quests: [quest, ...prev.quests] } : prev));
+    setFeedback('Quest registrada. Espere 1 min para ganhar XP ao concluir.');
   };
 
   const handleCompleteQuest = (id: string) => {
-    setState((prev) => {
-      if (!prev) return prev;
-      const quest = prev.quests.find((q) => q.id === id);
-      if (!quest || quest.completed) return prev;
+    if (!state) return;
+    const result = completeQuest(state, id);
+    if (!result) return;
 
-      const today = new Date().toISOString().split('T')[0];
-      const progress = applyXp(
-        prev.character.level,
-        prev.character.xp,
-        prev.character.maxXp,
-        quest.xp,
-      );
+    setState(result.state);
 
-      return {
-        ...prev,
-        quests: prev.quests.map((q) => (q.id === id ? { ...q, completed: true } : q)),
-        character: {
-          ...prev.character,
-          level: progress.level,
-          xp: progress.xp,
-          maxXp: progress.maxXp,
-          attributePoints:
-            prev.character.attributePoints + progress.attributePointsGained,
-        },
-        stats: {
-          ...prev.stats,
-          streak: nextStreak(prev.stats, today),
-          lastCompletedDate: today,
-          totalXpEarned: prev.stats.totalXpEarned + quest.xp,
-          totalQuestsCompleted: prev.stats.totalQuestsCompleted + 1,
-        },
-      };
-    });
+    if (result.leveledUp && result.newLevel != null) {
+      setLevelUpLevel(result.newLevel);
+    } else if (result.denyReason === 'TOO_FAST') {
+      setFeedback('Quest concluída sem XP — espere 1 minuto após criar.');
+    } else if (result.denyReason === 'DAILY_LIMIT') {
+      setFeedback('Limite diário de 10 quests com XP. A quest foi marcada como feita.');
+    } else if (result.xpAwarded > 0) {
+      setFeedback(`+${result.xpAwarded} XP conquistados!`);
+    }
   };
 
   return (
@@ -104,12 +110,21 @@ export default function App() {
       {state.onboardingDone ? (
         <QuestLogScreen
           state={state}
+          feedback={feedback}
+          loadWarning={loadError ? 'Não deu para restaurar o save. Começamos limpo.' : null}
           onAddQuest={handleAddQuest}
           onCompleteQuest={handleCompleteQuest}
+          onDismissFeedback={() => setFeedback(null)}
         />
       ) : (
         <OnboardingScreen onComplete={handleOnboarding} />
       )}
+      <LevelUpOverlay
+        visible={levelUpLevel != null}
+        level={levelUpLevel ?? state.character.level}
+        heroName={state.character.name || 'Herói'}
+        onDismiss={() => setLevelUpLevel(null)}
+      />
     </>
   );
 }

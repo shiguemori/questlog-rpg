@@ -22,6 +22,8 @@ export function createInitialState(): AppState {
       lastCompletedDate: null,
       totalXpEarned: 0,
       totalQuestsCompleted: 0,
+      dailyXpCompletions: 0,
+      dailyXpCompletionsDate: null,
     },
   };
 }
@@ -30,7 +32,15 @@ export async function loadState(): Promise<AppState> {
   try {
     const raw = await AsyncStorage.getItem(STORAGE_KEY);
     if (!raw) return createInitialState();
-    return { ...createInitialState(), ...(JSON.parse(raw) as AppState) };
+    const parsed = JSON.parse(raw) as Partial<AppState>;
+    const base = createInitialState();
+    return {
+      ...base,
+      ...parsed,
+      character: { ...base.character, ...parsed.character },
+      stats: { ...base.stats, ...parsed.stats },
+      quests: parsed.quests ?? base.quests,
+    };
   } catch {
     return createInitialState();
   }

@@ -205,9 +205,9 @@ O QuestLog transforma a gestão de tarefas mundanas em uma jornada épica de RPG
 2.  [x] **Domínio XP/streak:** `mobile/src/domain/` + testes.
 3.  [x] **Persistência mobile:** AsyncStorage (`QUESTLOG_RPG_MOBILE_V1`).
 4.  [ ] **Validar 2 min no dispositivo** (Expo Go / emulador).
-5.  [ ] **Overlay de Level Up** no mobile.
-6.  [ ] **Categorias na UI** (Study, Health, etc).
-7.  [ ] **Anti-Abuso:** cooldown / limite diário de XP.
+5.  [x] **Overlay de Level Up** no mobile.
+6.  [x] **Categorias na UI** (Study, Health, etc).
+7.  [x] **Anti-Abuso:** cooldown / limite diário de XP.
 8.  [ ] **Blender:** só após loop estável — ver `docs/06-pipeline-blender.md`.
 
 ## L) Concorrentes (pesquisa 2026-11)
