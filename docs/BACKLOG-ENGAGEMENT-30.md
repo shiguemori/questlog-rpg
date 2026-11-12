@@ -69,5 +69,5 @@ O anti-farm continua intocado: XP só 1 minuto depois de criar a quest, no máxi
 
 - Regras: `mobile/src/domain/engagement.ts` (testes em `engagement.test.ts`).
 - Conclusão: `completeQuest` grava a meta e o dia; o XP segue `antiFarm`.
-- Tela: cabeçalho, semana e atalhos em `QuestLogScreen`; cena em `VillainDefeatOverlay`; desfazer em `App.tsx` (5 s).
+- Tela: cabeçalho, semana e atalhos em `QuestLogScreen`; batalha em `BattleOverlay` quando há XP; cena curta em `VillainDefeatOverlay` quando o anti-farm bloqueia; desfazer em `App.tsx` (5 s depois do resultado).
 - Perf: um `setInterval` na lista; callbacks de concluir/criar estáveis para a linha memoizada não redesenhar o resto.

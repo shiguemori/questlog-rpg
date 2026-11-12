@@ -9,6 +9,8 @@
 
 **Contagem:** 10 fixes · 22 melhorias · 18 features. **50 endereçados** (47 FEITO · 3 DONE-MVP). Nenhum TODO aberto.
 
+**Atualização — batalha:** conclusão com XP abre combate por turnos ([07](07-batalha-turnos.md)). O item 41 (cena rara do vilão) vale agora só para o bloqueio do anti-farm. Vitória paga o XP de antes; derrota paga metade da base, sem bônus, e a quest continua concluída.
+
 Regra fixa para tudo abaixo: o anti-farm (XP só 1 min após criar a quest; máx. 10 quests com XP por dia) não pode ser enfraquecido.
 
 ## P0 — Bugs que quebram o loop (7/7 feitos)

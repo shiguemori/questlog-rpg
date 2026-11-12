@@ -4,9 +4,20 @@ import { Share, StyleSheet, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { ErrorBoundary } from './src/components/ErrorBoundary';
 import { LevelUpOverlay } from './src/components/LevelUpOverlay';
+import { BattleOverlay, type BattleRewardView } from './src/components/BattleOverlay';
 import { VillainDefeatOverlay } from './src/components/VillainDefeatOverlay';
 import { XP_DENY_COPY } from './src/domain/antiFarm';
-import { completeQuest } from './src/domain/completeQuest';
+import {
+  applyEnemyMove,
+  applyPlayerMove,
+  startBattle,
+  type BattleState,
+} from './src/domain/battle';
+import {
+  completeQuest,
+  planQuestCompletion,
+  type QuestRewardTier,
+} from './src/domain/completeQuest';
 import { celebrationLine, weekShareText, UNDO_COMPLETION_MS } from './src/domain/engagement';
 import { newlyUnlockedAchievements, spendAttributePoint } from './src/domain/progression';
 import {
@@ -38,7 +49,7 @@ import { localIsoDate } from './src/domain/dates';
 import { syncDailyReminder } from './src/platform/reminder';
 import { playVictorySound } from './src/platform/sound';
 import { buildVictoryEvent, type QuestVictoryEvent } from './src/domain/victory';
-import { announce, playHaptic } from './src/platform/feedback';
+import { announce, playHaptic, useReducedMotion } from './src/platform/feedback';
 import { OnboardingScreen } from './src/screens/OnboardingScreen';
 import { QuestLogScreen } from './src/screens/QuestLogScreen';
 import { stateStore } from './src/storage/persist';
@@ -56,6 +67,18 @@ const LOAD_NOTICE: Record<LoadStatus, string | null> = {
 };
 
 const FEEDBACK_VISIBLE_MS = 4200;
+/** Pausa para ler o golpe do herói antes do monstro agir. Reduzir movimento zera. */
+const ENEMY_TURN_MS = 450;
+
+interface BattleSession {
+  questId: string;
+  startedAtMs: number;
+  snapshot: AppState;
+  battle: BattleState;
+  reward: BattleRewardView | null;
+  leveledUp: boolean;
+  newLevel: number | null;
+}
 
 export interface QuestLogAppProps {
   /** Injetável nos testes; no aparelho usa o AsyncStorage protegido. */
@@ -71,6 +94,11 @@ export function QuestLogApp({ store = stateStore }: QuestLogAppProps) {
   const [undoState, setUndoState] = useState<AppState | null>(null);
   const undoRef = useRef<AppState | null>(null);
   const stateRef = useRef<AppState | null>(null);
+  const enemyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const sessionRef = useRef<BattleSession | null>(null);
+  const settledRef = useRef(false);
+  const [session, setSession] = useState<BattleSession | null>(null);
+  const reduceMotion = useReducedMotion();
 
   useEffect(() => {
     stateRef.current = state;
@@ -80,6 +108,20 @@ export function QuestLogApp({ store = stateStore }: QuestLogAppProps) {
     undoRef.current = null;
     setUndoState(null);
   }, []);
+
+  const clearEnemyTimer = useCallback(() => {
+    if (enemyTimer.current) clearTimeout(enemyTimer.current);
+    enemyTimer.current = null;
+  }, []);
+
+  const clearBattle = useCallback(() => {
+    clearEnemyTimer();
+    settledRef.current = false;
+    sessionRef.current = null;
+    setSession(null);
+  }, [clearEnemyTimer]);
+
+  useEffect(() => () => clearEnemyTimer(), [clearEnemyTimer]);
 
   // Hidratação: `load` nunca rejeita, então o app sempre sai do boot.
   useEffect(() => {
@@ -150,72 +192,210 @@ export function QuestLogApp({ store = stateStore }: QuestLogAppProps) {
     setUndoState(null);
     setVictoryEvent(null);
     setLevelUpLevel(null);
+    clearBattle();
     setState(snapshot);
     setFeedback('Conclusão desfeita. XP e streak voltaram.');
     announce('Conclusão desfeita. XP e streak voltaram.');
     playHaptic('TAP');
-  }, []);
+  }, [clearBattle]);
 
-  const handleCompleteQuest = useCallback((questId: string) => {
-    const current = stateRef.current;
-    if (!current) return;
-    const quest = current.quests.find((item) => item.id === questId);
-    const result = completeQuest(current, questId);
-    if (!result || !quest) return;
+  const resolveBattle = useCallback(
+    (base: BattleSession, battle: BattleState, phase: 'VICTORY' | 'DEFEAT') => {
+      if (settledRef.current) return;
+      settledRef.current = true;
+      clearEnemyTimer();
+      const rewardTier: QuestRewardTier = phase === 'VICTORY' ? 'FULL' : 'REDUCED';
+      const result = completeQuest(base.snapshot, base.questId, new Date(base.startedAtMs), {
+        rewardTier,
+      });
+      const reward: BattleRewardView = {
+        xpAwarded: result?.xpAwarded ?? 0,
+        reduced: rewardTier === 'REDUCED' && (result?.xpAwarded ?? 0) > 0,
+        habitLine: result
+          ? celebrationLine({
+              dailyGoalJustMet: result.dailyGoalJustMet,
+              milestone: result.streakMilestone,
+            })
+          : null,
+      };
+      const next: BattleSession = {
+        ...base,
+        battle,
+        reward,
+        leveledUp: result?.leveledUp ?? false,
+        newLevel: result?.newLevel ?? null,
+      };
+      sessionRef.current = next;
+      setSession(next);
+      if (!result) return;
 
-    undoRef.current = current;
-    setUndoState(current);
-    setState(result.state);
+      undoRef.current = base.snapshot;
+      setUndoState(base.snapshot);
+      setState(result.state);
 
-    const habitLine = celebrationLine({
-      dailyGoalJustMet: result.dailyGoalJustMet,
-      milestone: result.streakMilestone,
-    });
-    const event = buildVictoryEvent({
-      questTitle: quest.title,
-      category: quest.category,
-      xpAwarded: result.xpAwarded,
-      denyReason: result.denyReason,
-      leveledUp: result.leveledUp,
-      newLevel: result.newLevel,
-      habitLine,
-    });
-    const spoken = habitLine ? ` ${habitLine}` : '';
-    const discreet =
-      result.xpAwarded > 0
-        ? `Quest concluída. +${result.xpAwarded} XP.`
-        : result.denyReason
-          ? XP_DENY_COPY[result.denyReason]
-          : 'Quest concluída sem XP.';
+      const spoken = reward.habitLine ? ` ${reward.habitLine}` : '';
+      const line =
+        result.xpAwarded <= 0
+          ? result.denyReason
+            ? XP_DENY_COPY[result.denyReason]
+            : 'Quest concluída sem XP.'
+          : reward.reduced
+            ? `Quest concluída. Mais ${result.xpAwarded} de XP, sem bônus.`
+            : `Quest concluída. Mais ${result.xpAwarded} de XP.`;
+      if (result.xpAwarded > 0) {
+        playHaptic('SUCCESS');
+        void playVictorySound(base.snapshot.settings.soundEnabled);
+      } else {
+        playHaptic('WARNING');
+      }
+      announce(`${line}${spoken}`);
 
-    if (result.showVillainScene) {
-      setVictoryEvent(event);
-    } else if (result.leveledUp && result.newLevel != null) {
-      setVictoryEvent(null);
-      setLevelUpLevel(result.newLevel);
-      announce(`Level up! Você chegou ao nível ${result.newLevel}.`);
-    } else {
-      setVictoryEvent(null);
-    }
+      const unlocked = newlyUnlockedAchievements(base.snapshot, result.state);
+      if (unlocked.length > 0) {
+        setFeedback(`Conquista desbloqueada: ${unlocked.map((item) => item.title).join(', ')}`);
+      } else if (result.shieldConsumed) {
+        setFeedback('Escudo usado. O streak continua. Isso não dá XP.');
+      }
+    },
+    [clearEnemyTimer],
+  );
 
-    if (result.xpAwarded > 0) {
+  const handlePlayerMove = useCallback(
+    (moveId: string) => {
+      const current = sessionRef.current;
+      if (!current || current.reward || settledRef.current) return;
+      if (current.battle.phase !== 'PLAYER_TURN') return;
+      const nextBattle = applyPlayerMove(current.battle, moveId);
+      if (nextBattle === current.battle) return;
+      if (nextBattle.phase === 'VICTORY' || nextBattle.phase === 'DEFEAT') {
+        resolveBattle(current, nextBattle, nextBattle.phase);
+        return;
+      }
+      const pending: BattleSession = { ...current, battle: nextBattle };
+      sessionRef.current = pending;
+      setSession(pending);
+      clearEnemyTimer();
+      enemyTimer.current = setTimeout(
+        () => {
+          const live = sessionRef.current;
+          if (!live || live.reward || settledRef.current) return;
+          if (live.battle.phase !== 'ENEMY_TURN') return;
+          const after = applyEnemyMove(live.battle);
+          if (after.phase === 'VICTORY' || after.phase === 'DEFEAT') {
+            resolveBattle(live, after, after.phase);
+            return;
+          }
+          const updated: BattleSession = { ...live, battle: after };
+          sessionRef.current = updated;
+          setSession(updated);
+        },
+        reduceMotion ? 0 : ENEMY_TURN_MS,
+      );
+    },
+    [clearEnemyTimer, reduceMotion, resolveBattle],
+  );
+
+  const dismissBattle = useCallback(() => {
+    const pending = sessionRef.current;
+    const level = pending?.leveledUp ? pending.newLevel : null;
+    clearBattle();
+    if (level != null) {
+      setLevelUpLevel(level);
       playHaptic('SUCCESS');
-      announce(`Quest concluída. Mais ${result.xpAwarded} de XP.${spoken}`);
-      void playVictorySound(current.settings.soundEnabled);
-    } else {
-      playHaptic('WARNING');
-      announce(`${discreet}${spoken}`);
+      announce(`Level up! Você chegou ao nível ${level}.`);
     }
+  }, [clearBattle]);
 
-    const unlocked = newlyUnlockedAchievements(current, result.state);
-    if (unlocked.length > 0) {
-      setFeedback(`Conquista desbloqueada: ${unlocked.map((item) => item.title).join(', ')}`);
-    } else if (result.shieldConsumed) {
-      setFeedback('Escudo usado. O streak continua. Isso não dá XP.');
-    } else if (!result.showVillainScene) {
-      setFeedback(habitLine ?? discreet);
-    }
-  }, []);
+  const handleCompleteQuest = useCallback(
+    (questId: string) => {
+      const current = stateRef.current;
+      if (!current || sessionRef.current) return;
+      const quest = current.quests.find((item) => item.id === questId);
+      const now = new Date();
+      const plan = planQuestCompletion(current, questId, now);
+      if (plan === 'REJECTED' || !quest) return;
+      if (plan === 'BATTLE') {
+        clearUndo();
+        settledRef.current = false;
+        const next: BattleSession = {
+          questId,
+          startedAtMs: now.getTime(),
+          snapshot: current,
+          battle: startBattle({
+            character: current.character,
+            category: quest.category,
+            difficulty: quest.difficulty,
+            heroName: current.character.name,
+          }),
+          reward: null,
+          leveledUp: false,
+          newLevel: null,
+        };
+        sessionRef.current = next;
+        setSession(next);
+        announce(`Batalha contra ${next.battle.enemy.name}.`);
+        playHaptic('TAP');
+        return;
+      }
+
+      const result = completeQuest(current, questId, now);
+      if (!result) return;
+
+      undoRef.current = current;
+      setUndoState(current);
+      setState(result.state);
+
+      const habitLine = celebrationLine({
+        dailyGoalJustMet: result.dailyGoalJustMet,
+        milestone: result.streakMilestone,
+      });
+      const event = buildVictoryEvent({
+        questTitle: quest.title,
+        category: quest.category,
+        xpAwarded: result.xpAwarded,
+        denyReason: result.denyReason,
+        leveledUp: result.leveledUp,
+        newLevel: result.newLevel,
+        habitLine,
+      });
+      const spoken = habitLine ? ` ${habitLine}` : '';
+      const discreet =
+        result.xpAwarded > 0
+          ? `Quest concluída. +${result.xpAwarded} XP.`
+          : result.denyReason
+            ? XP_DENY_COPY[result.denyReason]
+            : 'Quest concluída sem XP.';
+
+      if (result.showVillainScene) {
+        setVictoryEvent(event);
+      } else if (result.leveledUp && result.newLevel != null) {
+        setVictoryEvent(null);
+        setLevelUpLevel(result.newLevel);
+        announce(`Level up! Você chegou ao nível ${result.newLevel}.`);
+      } else {
+        setVictoryEvent(null);
+      }
+
+      if (result.xpAwarded > 0) {
+        playHaptic('SUCCESS');
+        announce(`Quest concluída. Mais ${result.xpAwarded} de XP.${spoken}`);
+        void playVictorySound(current.settings.soundEnabled);
+      } else {
+        playHaptic('WARNING');
+        announce(`${discreet}${spoken}`);
+      }
+
+      const unlocked = newlyUnlockedAchievements(current, result.state);
+      if (unlocked.length > 0) {
+        setFeedback(`Conquista desbloqueada: ${unlocked.map((item) => item.title).join(', ')}`);
+      } else if (result.shieldConsumed) {
+        setFeedback('Escudo usado. O streak continua. Isso não dá XP.');
+      } else if (!result.showVillainScene) {
+        setFeedback(habitLine ?? discreet);
+      }
+    },
+    [clearUndo],
+  );
 
   const handleCalendarDay = useCallback(() => {
     setState((current) => (current ? reopenDueRecurring(current) : current));
@@ -272,13 +452,14 @@ export function QuestLogApp({ store = stateStore }: QuestLogAppProps) {
       const result = importSaveJson(raw);
       if (!result.ok) return result.message;
       clearUndo();
+      clearBattle();
       setVictoryEvent(null);
       setLevelUpLevel(null);
       setState(result.state);
       setFeedback('Save importado neste aparelho.');
       return null;
     },
-    [clearUndo],
+    [clearUndo, clearBattle],
   );
 
   const handleExport = useCallback(async () => {
@@ -338,12 +519,13 @@ export function QuestLogApp({ store = stateStore }: QuestLogAppProps) {
 
   const handleResetJourney = useCallback(() => {
     clearUndo();
+    clearBattle();
     setVictoryEvent(null);
     setLevelUpLevel(null);
     setFeedback(null);
     void store.clear();
     setState(createInitialState());
-  }, [store, clearUndo]);
+  }, [store, clearUndo, clearBattle]);
 
   const dismissFeedback = useCallback(() => setFeedback(null), []);
   const dismissStorageNotice = useCallback(() => setStorageNotice(null), []);
@@ -396,6 +578,15 @@ export function QuestLogApp({ store = stateStore }: QuestLogAppProps) {
       ) : (
         <OnboardingScreen onComplete={handleOnboarding} />
       )}
+      {session ? (
+        <BattleOverlay
+          battle={session.battle}
+          reward={session.reward}
+          onMove={handlePlayerMove}
+          onDismiss={dismissBattle}
+          onUndo={undoState ? handleUndo : undefined}
+        />
+      ) : null}
       <VillainDefeatOverlay
         event={victoryEvent}
         onDismiss={dismissVictory}

@@ -10,6 +10,7 @@ Documentação enxuta do produto mobile Shiguemori. Display name: **QuestLog**. 
 | [04 — Brand](04-brand.md) | UI: slate + amber; marca Shiguemori |
 | [05 — ADR escopo MVP](05-adr-escopo-mvp.md) | O que NÃO entra agora |
 | [06 — Pipeline Blender](06-pipeline-blender.md) | Pastas + naming; sem fábrica de assets |
+| [07 — Batalha por turnos](07-batalha-turnos.md) | Combate ao concluir quest com XP |
 | [Backlog 50](BACKLOG-50.md) | 50 itens P0–P3 com critério de aceite e status |
 | [Backlog engajamento](BACKLOG-ENGAGEMENT-30.md) | Mais 30 itens de hábito, retenção e clareza |
 | [Checklist manual](MANUAL-TEST-CHECKLIST.md) | Roteiro de teste em aparelho (Android + iPhone) |

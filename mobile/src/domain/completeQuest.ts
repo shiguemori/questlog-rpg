@@ -12,6 +12,16 @@ import { attributeBonusXp, resolveStreak, streakBonusXp } from './rewards';
 import type { AppState, Character, Quest, UserStats } from './types';
 import { applyXp } from './xp';
 
+/** FULL é o padrão de quem já chama `completeQuest` direto. */
+export type QuestRewardTier = 'FULL' | 'REDUCED';
+
+export interface CompleteQuestOptions {
+  rewardTier?: QuestRewardTier;
+}
+
+/** O que a tela faz ao tocar em concluir. Batalha só se o anti-farm daria XP. */
+export type QuestCompletionPlan = 'REJECTED' | 'BLOCKED' | 'BATTLE';
+
 export interface CompleteQuestResult {
   state: AppState;
   leveledUp: boolean;
@@ -24,19 +34,26 @@ export interface CompleteQuestResult {
   streakMilestone: StreakMilestone | null;
   /** Cena cheia só na 1ª do dia ou em quest difícil. */
   showVillainScene: boolean;
-  /** Bônus de atributo + streak, já incluído em `xpAwarded`. Zero se o anti-farm negou. */
+  /** Bônus de atributo + streak, já incluído em `xpAwarded`. Zero se o anti-farm negou ou na derrota. */
   bonusXp: number;
   shieldConsumed: boolean;
+  /**
+   * FULL: vitória (padrão) — XP base + bônus.
+   * REDUCED: derrota — metade do XP base, sem bônus. O anti-farm continua valendo.
+   */
+  rewardTier: QuestRewardTier;
 }
 
 /**
  * Caso de uso: concluir quest com anti-farm + XP + streak.
  * Contrato SDD — único caminho de mutação de conclusão no MVP.
+ * A tela só chama isto depois da batalha quando `planQuestCompletion` é BATTLE.
  */
 export function completeQuest(
   state: AppState,
   questId: string,
   now: Date = new Date(),
+  options?: CompleteQuestOptions,
 ): CompleteQuestResult | null {
   const quest = state.quests.find((q) => q.id === questId);
   if (!quest || quest.completed) return null;
@@ -46,11 +63,17 @@ export function completeQuest(
   const eligibility = evaluateXpEligibility(quest, state.stats, now.getTime(), todayIsoDate);
   const streakResolution = resolveStreak(state.stats, todayIsoDate, state.settings);
   const streak = streakResolution.streak;
+  const rewardTier: QuestRewardTier = options?.rewardTier === 'REDUCED' ? 'REDUCED' : 'FULL';
+  const eligible = eligibility.eligible && eligibility.xpAwarded > 0;
   const bonusXp =
-    eligibility.eligible && eligibility.xpAwarded > 0
+    eligible && rewardTier === 'FULL'
       ? attributeBonusXp(state.character, quest.category) + streakBonusXp(streak)
       : 0;
-  const xpAwarded = eligibility.xpAwarded + bonusXp;
+  const xpAwarded = !eligible
+    ? 0
+    : rewardTier === 'REDUCED'
+      ? Math.max(1, Math.floor(eligibility.xpAwarded / 2))
+      : eligibility.xpAwarded + bonusXp;
 
   let character: Character = state.character;
   let leveledUp = false;
@@ -104,5 +127,22 @@ export function completeQuest(
     showVillainScene: firstOfDay || quest.difficulty === 'HARD',
     bonusXp,
     shieldConsumed: streakResolution.shieldConsumed,
+    rewardTier,
   };
+}
+
+/**
+ * Batalha só quando a conclusão daria XP.
+ * BLOCKED marca a quest na hora, com o feedback curto, sem luta.
+ */
+export function planQuestCompletion(
+  state: AppState,
+  questId: string,
+  now: Date = new Date(),
+): QuestCompletionPlan {
+  const quest = state.quests.find((item) => item.id === questId);
+  if (!quest || quest.completed) return 'REJECTED';
+  const eligibility = evaluateXpEligibility(quest, state.stats, now.getTime(), localIsoDate(now));
+  if (!eligibility.eligible || eligibility.xpAwarded <= 0) return 'BLOCKED';
+  return 'BATTLE';
 }

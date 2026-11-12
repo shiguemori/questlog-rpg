@@ -9,15 +9,16 @@ import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-na
 export function PressScale({
   children,
   style,
+  containerStyle,
   onPressIn,
   onPressOut,
   ...rest
-}: PressableProps & { style?: StyleProp<ViewStyle> }) {
+}: PressableProps & { style?: StyleProp<ViewStyle>; containerStyle?: StyleProp<ViewStyle> }) {
   const scale = useSharedValue(1);
   const animated = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
 
   return (
-    <Animated.View style={animated}>
+    <Animated.View style={[animated, containerStyle]}>
       <Pressable
         {...rest}
         style={style}

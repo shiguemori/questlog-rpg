@@ -20,7 +20,7 @@ npx expo start -c      # -c limpa o cache do Metro (as dependências mudaram)
 
 - [ ] **AsyncStorage:** o app abre sem a tela vermelha "AsyncStorageError: Native module is null".
 - [ ] Não aparece a faixa vermelha "O armazenamento do aparelho não respondeu" (se aparecer, o módulo nativo não carregou — anotar).
-- [ ] **Barra de XP:** criar "Beber água", esperar o contador zerar, tocar "Feito" → fechar a cena → barra mostra um filete âmbar e o texto `10/100 XP`.
+- [ ] **Barra de XP:** criar "Beber água", esperar o contador zerar, tocar "Feito" → lutar até o monstro cair → Continuar → barra mostra um filete âmbar e o texto `10/100 XP`.
 - [ ] Concluir mais quests: a barra cresce a cada uma, proporcional ao texto.
 - [ ] Fechar o app por completo e abrir: a barra volta preenchida no mesmo ponto.
 
@@ -45,20 +45,22 @@ npx expo start -c      # -c limpa o cache do Metro (as dependências mudaram)
 
 - [ ] "Feito" antes de 1 min abre "Concluir sem XP?".
   - [ ] "Esperar" não muda nada.
-  - [ ] "Concluir sem XP" marca a quest, mostra "Quest marcada" e o XP **não** sobe.
+  - [ ] "Concluir sem XP" marca a quest, mostra "Quest marcada" (sem arena) e o XP **não** sobe.
 - [ ] Depois de 1 min o botão fica âmbar cheio e concluir dá XP sem perguntar.
 - [ ] Na 11ª quest com XP do dia: cena "Sem recompensa" e aviso de limite diário no cabeçalho (`XP hoje 10/10`).
 - [ ] Mudar a data do aparelho para amanhã: contador volta a `0/10` e o streak sobe ao concluir.
 
 ## 5. XP, level up e folha do herói
 
-- [ ] Ao fechar 100 XP: cena do vilão → "Level up!" → barra recomeça no novo nível (não fica cheia nem vazia errada).
+- [ ] Ao fechar 100 XP: batalha vencida → "Level up!" → barra recomeça no novo nível (não fica cheia nem vazia errada).
 - [ ] Cabeçalho mostra "+2 pontos"; tocar no herói abre a folha.
 - [ ] "+" em um atributo aumenta o número e reduz os pontos; sem pontos o "+" fica apagado.
 - [ ] Estatísticas batem com o que foi jogado (XP total, quests, streak, melhor streak).
 - [ ] Conquista "Primeira vitória" aparece desbloqueada após o primeiro XP; aviso âmbar no topo ao desbloquear.
 - [ ] "Reiniciar jornada" pede confirmação e volta ao onboarding; reabrir o app continua no onboarding.
 - [ ] Vilão muda com a categoria (Estudo → Distração, Saúde → Preguiça…).
+- [ ] Só curar até a luta acabar: a quest conta, o streak sobe e o XP é a metade da base, sem bônus.
+- [ ] Botão voltar no meio da luta não foge; na tela de resultado, fecha.
 
 ## 6. Persistência
 
@@ -79,7 +81,7 @@ npx expo start -c      # -c limpa o cache do Metro (as dependências mudaram)
 **Android**
 
 - [ ] Conteúdo não fica sob a barra de status nem sob a barra de gestos; o "+" não encosta na borda.
-- [ ] Botão/gesto voltar fecha o modal de criação, a cena do vilão, o level up e a folha do herói.
+- [ ] Botão/gesto voltar fecha o modal de criação, o resultado da batalha, a cena sem XP, o level up e a folha do herói. No meio da luta, voltar não foge.
 - [ ] Háptico ao ganhar XP (se o aparelho tiver motor).
 
 **iPhone**

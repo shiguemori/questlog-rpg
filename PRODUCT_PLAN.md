@@ -67,7 +67,8 @@ O QuestLog transforma a gestão de tarefas mundanas em uma jornada épica de RPG
 - Modal simples: Nome da Quest, Seleção de Categoria (Ícones), Seletor de Dificuldade (Impacta XP).
 
 **4. Concluir Quest:**
-- Feedback visual (Sparkles/Animação) -> Barra de XP subindo em tempo real -> Se subir de nível, overlay de "LEVEL UP" ocupando a tela.
+- Se o anti-farm libera XP, abre batalha por turnos ([docs/07-batalha-turnos.md](docs/07-batalha-turnos.md)). Vitória: XP integral. Derrota: a quest conclui, com metade do XP base e sem bônus. Sem XP: aviso curto, sem luta.
+- Depois do resultado a barra de XP sobe. Se subir de nível, overlay de "LEVEL UP".
 
 **5. Perfil do Personagem (Hero):**
 - Visualização do Avatar -> Distribuição de pontos de atributo -> Histórico de Títulos e Conquistas.
@@ -161,8 +162,8 @@ O QuestLog transforma a gestão de tarefas mundanas em uma jornada épica de RPG
 - 30 dias: 1.5x XP (Título "O Incansável")
 
 **Anti-Abuso:**
-- Limite de 10 Quests concluídas por dia para ganho de XP (previne farm artificial).
-- Quests concluídas em menos de 1 minuto após criação não geram XP (exceto se forem recorrentes).
+- Limite de 10 Quests concluídas por dia para ganho de XP (previne farm artificial). Derrota na batalha também gasta uma vaga quando há XP.
+- Quests concluídas em menos de 1 minuto após criação não geram XP (exceto se forem recorrentes) e não abrem batalha.
 
 ---
 

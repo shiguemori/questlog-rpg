@@ -62,6 +62,16 @@ async function advance(ms: number) {
   });
 }
 
+/** Golpeia até a tela de resultado. O monstro age no timer de 450 ms. */
+async function fightWith(moveLabel: string) {
+  for (let step = 0; step < 8; step += 1) {
+    if (screen.queryByLabelText('Fechar batalha')) return;
+    await fireEvent.press(screen.getByLabelText(moveLabel));
+    await advance(500);
+  }
+  expect(screen.getByLabelText('Fechar batalha')).toBeTruthy();
+}
+
 /** Percentual preenchido da barra de XP do cabeçalho (0–100). */
 function xpFillPercent(): number {
   const { width } = StyleSheet.flatten(screen.getAllByTestId('xp-bar-fill')[0].props.style);
@@ -129,9 +139,10 @@ describe('QuestLogApp — fluxo no aparelho', () => {
 
     await fireEvent.press(screen.getByLabelText('Concluir quest Estudar 25min'));
     expect(alertSpy).not.toHaveBeenCalled();
+    await fightWith('Usar Rajada');
     expect(screen.getByText('Distração derrotada!')).toBeTruthy();
 
-    await fireEvent.press(screen.getByLabelText('Fechar cena de vitória'));
+    await fireEvent.press(screen.getByLabelText('Fechar batalha'));
     await advance(1000);
 
     expect(screen.getByText('25/100 XP')).toBeTruthy();
@@ -160,6 +171,7 @@ describe('QuestLogApp — fluxo no aparelho', () => {
     expect(alertSpy.mock.calls[0][0]).toBe('Concluir sem XP?');
     // Enquanto o jogador não confirma, nada muda.
     expect(screen.queryByText('Quest marcada')).toBeNull();
+    expect(screen.queryByLabelText('Usar Rajada')).toBeNull();
 
     await act(async () => {
       pressAlertButton(alertSpy, 'Concluir sem XP');
@@ -202,8 +214,9 @@ describe('QuestLogApp — fluxo no aparelho', () => {
     expect(xpFillPercent()).toBeCloseTo(90, 5);
 
     await fireEvent.press(screen.getByLabelText('Concluir quest Maratona'));
+    await fightWith('Usar Rajada');
     expect(screen.getByText('Preguiça derrotada!')).toBeTruthy();
-    await fireEvent.press(screen.getByLabelText('Fechar cena de vitória'));
+    await fireEvent.press(screen.getByLabelText('Fechar batalha'));
 
     expect(screen.getByText('Level up!')).toBeTruthy();
     await fireEvent.press(screen.getByLabelText('Continuar após level up'));
@@ -281,6 +294,7 @@ describe('QuestLogApp — fluxo no aparelho', () => {
 
     await advance(61_000);
     await fireEvent.press(screen.getByLabelText('Concluir quest Beber água'));
+    await fightWith('Usar Investida');
     expect(screen.getByText('Meta do dia cumprida. Amanhã basta uma quest.')).toBeTruthy();
     expect(screen.getByText('Preguiça derrotada!')).toBeTruthy();
 
@@ -319,7 +333,8 @@ describe('App — armazenamento nativo ausente (bug P0 do Expo Go)', () => {
     await fireEvent.press(screen.getByLabelText('Adicionar quest Treino, mais 50 de XP'));
     await advance(61_000);
     await fireEvent.press(screen.getByLabelText('Concluir quest Treino'));
-    await fireEvent.press(screen.getByLabelText('Fechar cena de vitória'));
+    await fightWith('Usar Rajada');
+    await fireEvent.press(screen.getByLabelText('Fechar batalha'));
     await advance(1000);
     expect(screen.getByText('50/100 XP')).toBeTruthy();
   });

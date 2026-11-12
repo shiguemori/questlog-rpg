@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { MAX_XP_QUESTS_PER_DAY } from './antiFarm';
-import { completeQuest } from './completeQuest';
+import { completeQuest, planQuestCompletion } from './completeQuest';
 import { CLASS_DEFAULTS, INITIAL_MAX_XP } from './constants';
 import { localIsoDate } from './dates';
 import { defaultPlayerSettings } from './state';
@@ -266,5 +266,95 @@ describe('completeQuest', () => {
     const snapshot = JSON.stringify(state);
     completeQuest(state, 'q1', new Date('2026-11-11T10:05:00.000Z'));
     assert.equal(JSON.stringify(state), snapshot);
+  });
+
+  it('derrota paga metade do XP base, sem bônus, e mantém o hábito', () => {
+    const now = new Date(2026, 10, 11, 10, 5);
+    const base = makeState();
+    const state = makeState({
+      character: {
+        ...base.character,
+        xp: 0,
+        attributes: { ...base.character.attributes, intelligence: 8 },
+      },
+      stats: { ...base.stats, streak: 2, bestStreak: 2, lastCompletedDate: '2026-11-10' },
+      quests: [{ ...base.quests[0], difficulty: 'EASY', xp: 10, category: 'STUDY' }],
+    });
+    const full = completeQuest(state, 'q1', now);
+    const reduced = completeQuest(state, 'q1', now, { rewardTier: 'REDUCED' });
+    assert.ok(full);
+    assert.ok(reduced);
+    assert.equal(full.xpAwarded, 18);
+    assert.equal(full.bonusXp, 8);
+    assert.equal(reduced.rewardTier, 'REDUCED');
+    assert.equal(reduced.xpAwarded, 5);
+    assert.equal(reduced.bonusXp, 0);
+    assert.equal(reduced.state.character.xp, 5);
+    assert.equal(reduced.state.stats.streak, 3);
+    assert.equal(reduced.state.stats.dailyXpCompletions, 1);
+    assert.equal(reduced.state.quests[0].completed, true);
+    assert.equal(reduced.dailyGoalJustMet, true);
+  });
+
+  it('derrota não fura o anti-farm', () => {
+    const now = new Date(2026, 10, 11, 10, 5);
+    const tooFast = makeState({
+      quests: [
+        {
+          id: 'q1',
+          title: 'Rápida',
+          category: 'OTHER',
+          difficulty: 'EASY',
+          xp: 10,
+          completed: false,
+          createdAt: new Date(2026, 10, 11, 10, 4, 30).toISOString(),
+          recurring: false,
+        },
+      ],
+    });
+    const blocked = completeQuest(tooFast, 'q1', now, { rewardTier: 'REDUCED' });
+    assert.ok(blocked);
+    assert.equal(blocked.xpAwarded, 0);
+    assert.equal(blocked.denyReason, 'TOO_FAST');
+    assert.equal(blocked.state.stats.dailyXpCompletions, 0);
+
+    const base = makeState();
+    const limited = completeQuest(
+      makeState({
+        stats: {
+          ...base.stats,
+          dailyXpCompletions: MAX_XP_QUESTS_PER_DAY,
+          dailyXpCompletionsDate: localIsoDate(now),
+        },
+      }),
+      'q1',
+      now,
+      { rewardTier: 'REDUCED' },
+    );
+    assert.ok(limited);
+    assert.equal(limited.xpAwarded, 0);
+    assert.equal(limited.denyReason, 'DAILY_LIMIT');
+    assert.equal(limited.state.stats.dailyXpCompletions, MAX_XP_QUESTS_PER_DAY);
+  });
+
+  it('abre batalha só quando a conclusão daria XP', () => {
+    const now = new Date(2026, 10, 11, 10, 5);
+    const state = makeState();
+    assert.equal(planQuestCompletion(state, 'missing', now), 'REJECTED');
+    assert.equal(planQuestCompletion(state, 'q1', now), 'BATTLE');
+
+    const done = completeQuest(state, 'q1', now);
+    assert.ok(done);
+    assert.equal(planQuestCompletion(done.state, 'q1', now), 'REJECTED');
+
+    const tooFast = makeState({
+      quests: [
+        {
+          ...state.quests[0],
+          createdAt: new Date(2026, 10, 11, 10, 4, 30).toISOString(),
+        },
+      ],
+    });
+    assert.equal(planQuestCompletion(tooFast, 'q1', now), 'BLOCKED');
   });
 });

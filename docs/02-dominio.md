@@ -36,7 +36,8 @@ Fonte de verdade no app: `mobile/src/domain/*`.
 
 | Arquivo | O que decide |
 |---------|--------------|
-| `completeQuest.ts` | Concluir quest: anti-farm → XP → nível → streak → meta do dia |
+| `completeQuest.ts` | Concluir quest: anti-farm → XP → nível → streak → meta do dia. `planQuestCompletion` decide se abre batalha. `rewardTier: REDUCED` é a derrota (metade do XP base, sem bônus) |
+| `battle.ts` | Batalha por turnos: `startBattle`, `applyPlayerMove`, `applyEnemyMove`. Não grava save |
 | `engagement.ts` | Meta, ritual de retorno, marcos de streak, semana e repetir quest |
 | `quests.ts` | Validar título, registrar, excluir, limpar, separar abertas/concluídas |
 | `progression.ts` | Título do herói, gasto de atributo, conquistas |

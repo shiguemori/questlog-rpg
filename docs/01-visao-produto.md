@@ -10,7 +10,7 @@ Lucas, 20–35, fã de RPG, abandona to-do lists “chatas”. Quer dopamina ime
 
 1. Onboarding: nome + classe (Guerreiro / Mago / Ladino).
 2. Registrar quest (título + dificuldade).
-3. Concluir → XP → eventual level up → streak.
+3. Concluir → batalha (só se o anti-farm daria XP) → XP → eventual level up → streak. Sem XP, a quest conclui com um aviso curto e sem luta. Detalhe em [batalha](07-batalha-turnos.md).
 
 **Critério de pronto:** abre no celular (Expo) e joga ~2 minutos.
 
