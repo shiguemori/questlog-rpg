@@ -44,6 +44,7 @@
   },
   "jest": {
     "preset": "jest-expo",
+    "globalSetup": "./jest.global-setup.js",
     "testMatch": [
       "**/*.spec.ts",
       "**/*.spec.tsx"
