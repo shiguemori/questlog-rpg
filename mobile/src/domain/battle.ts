@@ -1,41 +1,126 @@
 import { CLASS_DEFAULTS, DIFFICULTY_LABELS } from './constants';
-import type { Category, Character, CharacterClass, Difficulty } from './types';
+import type {
+  AttributeKey,
+  Attributes,
+  Category,
+  Character,
+  CharacterClass,
+  Difficulty,
+} from './types';
 import { VILLAIN_BY_CATEGORY } from './victory';
 
 /**
- * Contrato da batalha por turnos (estilo Game Boy).
- * Estado local e puro: a UI chama `startBattle`, `applyPlayerMove` e `applyEnemyMove`.
- * Arte final entra pelos `assetKey` — enquanto isso a tela desenha placeholder.
+ * Motor da batalha por turnos. Puro: a tela chama `startBattle`, `applyPlayerMove` e `applyEnemyMove`.
+ *
+ * O que faz a luta ter estratégia:
+ * - cada classe tem habilidades próprias, que escalam com o atributo da classe;
+ * - habilidades custam energia e têm recarga;
+ * - status (queimadura, veneno, atordoar, fraqueza, fúria, esquiva, regeneração, guarda);
+ * - o monstro mostra o próximo golpe (intenção) antes de agir;
+ * - a vida do herói entra e sai da luta (ver `vitals.ts`).
+ *
+ * A sorte (crítico e esquiva) vem de um gerador com semente guardado no estado,
+ * então a mesma semente sempre produz a mesma luta.
  */
 
 export type BattleSide = 'PLAYER' | 'ENEMY';
-export type BattleMoveEffect = 'DAMAGE' | 'HEAL' | 'GUARD';
 export type BattlePhase = 'PLAYER_TURN' | 'ENEMY_TURN' | 'VICTORY' | 'DEFEAT';
+export type SkillKind = 'PHYSICAL' | 'MAGIC' | 'SUPPORT';
+export type StatusId =
+  'BURN' | 'POISON' | 'STUN' | 'WEAKEN' | 'EMPOWER' | 'EVADE' | 'REGEN' | 'GUARD';
+export type FxKind =
+  | 'SLASH'
+  | 'IMPACT'
+  | 'FIRE'
+  | 'ICE'
+  | 'POISON'
+  | 'ARCANE'
+  | 'SHADOW'
+  | 'SHIELD'
+  | 'HEAL'
+  | 'BUFF'
+  | 'DEBUFF'
+  | 'SMOKE';
+export type SkillCondition = 'TARGET_LOW_HP' | 'TARGET_POISONED' | 'TARGET_BURNING';
 
-export interface BattleMove {
+export interface StatusEffect {
+  id: StatusId;
+  /** Turnos restantes do dono. Diminui no fim de cada turno dele. */
+  turns: number;
+  /** Dano/cura por turno ou percentual (guarda, fúria, fraqueza). */
+  potency: number;
+  /** Só o veneno acumula (máx. 3). */
+  stacks: number;
+}
+
+export interface StatusApplication {
+  status: StatusId;
+  target: 'SELF' | 'TARGET';
+  turns: number;
+  /** Potência fixa + atributo × razão. */
+  potency?: number;
+  potencyRatio?: number;
+}
+
+export interface BattleSkill {
   id: string;
   name: string;
+  /** Linha curta do botão. */
+  tag: string;
+  /** Descrição completa (leitor de tela e detalhe). */
   blurb: string;
-  effect: BattleMoveEffect;
-  /** Dano, cura ou percentual de guarda (0–100) do próximo golpe recebido. */
+  kind: SkillKind;
+  /** Energia gasta. Monstros não têm energia. */
+  cost: number;
+  /** Turnos até poder usar de novo. 0 = sempre. */
+  cooldown: number;
+  /** Atributo que escala o golpe, o escudo, a cura e a potência dos status. */
+  scaling: AttributeKey;
+  /** Dano base (0 = habilidade sem dano). */
   power: number;
-  /** Hook de arte. Ex.: `move.mage.burst`. */
+  ratio: number;
+  hits?: number;
+  heal?: { power: number; ratio: number };
+  shield?: { power: number; ratio: number };
+  applies?: readonly StatusApplication[];
+  /** Fração do dano causado que volta como vida. */
+  drain?: number;
+  /** Bônus condicional (ex.: Execução contra alvo com pouca vida). */
+  bonus?: { when: SkillCondition; multiplier: number; guaranteedCrit?: boolean };
+  /** Pontos percentuais somados à chance de crítico. */
+  critBonus?: number;
+  /** Energia devolvida ao usar. */
+  energyGain?: number;
+  fx: FxKind;
+  /** Hook de arte. Ex.: `skill.mage.fireball`. */
   assetKey: string;
 }
 
 export interface BattleActor {
   id: string;
   name: string;
-  /** Herói: classe. Monstro: dificuldade da quest. */
   subtitle: string;
   side: BattleSide;
   hp: number;
   maxHp: number;
-  /** Percentual que reduz o próximo golpe. Zera depois de absorver um hit. */
-  guard: number;
-  attack: number;
+  shield: number;
+  energy: number;
+  maxEnergy: number;
+  /** Nome da energia da classe (Disposição, Foco, Fôlego). */
+  energyLabel: string;
+  attributes: Attributes;
   defense: number;
-  moves: readonly BattleMove[];
+  /** Chance de crítico em %. */
+  critChance: number;
+  /** Chance de esquivar golpe físico em %. */
+  dodgeChance: number;
+  /** Bônus de talento em % sobre todo dano causado. */
+  damageBonus: number;
+  /** Bônus de talento em % sobre os escudos. */
+  shieldBonus: number;
+  statuses: readonly StatusEffect[];
+  cooldowns: Readonly<Record<string, number>>;
+  skills: readonly BattleSkill[];
   /** Hook de arte. Ex.: `hero.mage`, `enemy.study`. */
   assetKey: string;
 }
@@ -45,18 +130,43 @@ export interface BattleLogEntry {
   text: string;
 }
 
+export type BattleEventKind =
+  'CAST' | 'DAMAGE' | 'MISS' | 'HEAL' | 'SHIELD' | 'STATUS' | 'TICK' | 'SKIP' | 'KO';
+
+/** O que a tela anima depois de cada ação. `seq` cresce sempre. */
+export interface BattleEvent {
+  seq: number;
+  kind: BattleEventKind;
+  /** Quem sofre o efeito. */
+  target: BattleSide;
+  /** Quem causou. */
+  source: BattleSide;
+  amount?: number;
+  crit?: boolean;
+  status?: StatusId;
+  fx?: FxKind;
+  skillName?: string;
+  /** Só no CAST: qual habilidade, para a tela escolher a animação dela. */
+  skillId?: string;
+}
+
 export interface BattleState {
   phase: BattlePhase;
-  /** Golpes do herói já resolvidos. Começa em 0. */
+  /** Turnos do herói já resolvidos (inclui turno perdido por atordoamento). */
   turn: number;
   hero: BattleActor;
   enemy: BattleActor;
   log: readonly BattleLogEntry[];
   lastPlayerMoveId: string | null;
   lastEnemyMoveId: string | null;
-  /** Golpes do monstro já resolvidos. O próximo move sai daqui — sem aleatoriedade. */
   enemyTurns: number;
-  /** Título da vitória, com a concordância do vilão. */
+  /** Próximo golpe do monstro, mostrado ao herói. */
+  enemyIntentId: string | null;
+  /** Eventos da última ação, para animar. */
+  events: readonly BattleEvent[];
+  eventSeq: number;
+  /** Estado do gerador aleatório (uint32). */
+  rng: number;
   victoryTitle: string;
 }
 
@@ -65,24 +175,73 @@ export interface StartBattleInput {
   category: Category;
   difficulty: Difficulty;
   heroName: string;
+  /** Vida com que o herói entra. Padrão: cheia. */
+  heroHp?: number;
+  /** Semente da sorte. Padrão fixo, para testes. */
+  seed?: number;
+  /** Habilidades levadas para a luta (ver `talents.ts`). Padrão: `HERO_SKILLS`. */
+  skills?: readonly BattleSkill[];
+  /** Bônus passivos da árvore de talentos. */
+  bonus?: Partial<HeroBonus>;
 }
 
-/** Atributo que vira ataque, por classe. Vitalidade vira HP e defesa. */
-export const CLASS_OFFENSE: Record<CharacterClass, 'strength' | 'intelligence' | 'agility'> = {
+/** Bônus passivos que a árvore de talentos dá ao herói. */
+export interface HeroBonus {
+  damagePct: number;
+  maxHp: number;
+  critChance: number;
+  shieldPct: number;
+  maxEnergy: number;
+}
+
+export const NO_BONUS: HeroBonus = {
+  damagePct: 0,
+  maxHp: 0,
+  critChance: 0,
+  shieldPct: 0,
+  maxEnergy: 0,
+};
+
+/** Limite de turnos do herói. Com a vida guardada, a luta pode durar mais que antes. */
+export const MAX_BATTLE_TURNS = 12;
+export const ENERGY_REGEN_PER_TURN = 3;
+export const CRIT_MULTIPLIER = 1.5;
+export const POISON_MAX_STACKS = 3;
+
+export const STATUS_LABELS: Record<StatusId, string> = {
+  BURN: 'Fervendo',
+  POISON: 'Incomodado',
+  STUN: 'Travado',
+  WEAKEN: 'Cansado',
+  EMPOWER: 'Animado',
+  EVADE: 'Esquiva',
+  REGEN: 'Descansando',
+  GUARD: 'Guarda',
+};
+
+/** Status ruins para quem carrega. Os outros são bônus. */
+export const HARMFUL_STATUSES: readonly StatusId[] = ['BURN', 'POISON', 'STUN', 'WEAKEN'];
+
+/** Atributo que vira ataque, por classe. Vitalidade vira vida e defesa. */
+export const CLASS_OFFENSE: Record<CharacterClass, AttributeKey> = {
   WARRIOR: 'strength',
   MAGE: 'intelligence',
   ROGUE: 'agility',
 };
 
-/** HP e ataque do monstro. A quest difícil dói mais; a fácil cabe num hábito. */
-export const ENEMY_SCALE: Record<Difficulty, { hp: number; attack: number }> = {
-  EASY: { hp: 30, attack: 2 },
-  MEDIUM: { hp: 44, attack: 5 },
-  HARD: { hp: 60, attack: 8 },
+export const CLASS_ENERGY_LABEL: Record<CharacterClass, string> = {
+  WARRIOR: 'Disposição',
+  MAGE: 'Foco',
+  ROGUE: 'Fôlego',
 };
 
-/** Depois deste número de golpes do herói, se o monstro segue de pé, a luta acaba. */
-export const MAX_BATTLE_TURNS = 8;
+/** Vida base do monstro e atributos por dificuldade. Sobem com o nível do herói. */
+export const ENEMY_SCALE: Record<Difficulty, { hp: number; attributes: Attributes }> = {
+  EASY: { hp: 30, attributes: { strength: 2, intelligence: 2, agility: 2, vitality: 2 } },
+  MEDIUM: { hp: 46, attributes: { strength: 4, intelligence: 4, agility: 3, vitality: 3 } },
+  HARD: { hp: 64, attributes: { strength: 6, intelligence: 6, agility: 4, vitality: 5 } },
+};
+export const ENEMY_HP_PER_LEVEL = 5;
 
 const HERO_ASSET: Record<CharacterClass, string> = {
   WARRIOR: 'hero.warrior',
@@ -98,189 +257,1177 @@ const ENEMY_ASSET: Record<Category, string> = {
   OTHER: 'enemy.other',
 };
 
-function move(
-  id: string,
-  name: string,
-  effect: BattleMoveEffect,
-  power: number,
-  blurb: string,
-): BattleMove {
-  return { id, name, effect, power, blurb, assetKey: `move.${id}` };
-}
+type SkillSpec = Omit<BattleSkill, 'assetKey' | 'cost' | 'cooldown' | 'power' | 'ratio'> &
+  Partial<Pick<BattleSkill, 'cost' | 'cooldown' | 'power' | 'ratio'>>;
 
-export const HERO_MOVES: Record<CharacterClass, readonly BattleMove[]> = {
-  WARRIOR: [
-    move('warrior.slash', 'Corte', 'DAMAGE', 8, 'Um corte firme.'),
-    move('warrior.guard', 'Postura', 'GUARD', 50, 'Segura o próximo golpe.'),
-    move('warrior.charge', 'Investida', 'DAMAGE', 14, 'Avança com tudo.'),
-    move('warrior.breath', 'Fôlego', 'HEAL', 10, 'Recupera um pouco de HP.'),
-  ],
-  MAGE: [
-    move('mage.spark', 'Faísca', 'DAMAGE', 7, 'Uma faísca rápida.'),
-    move('mage.barrier', 'Barreira', 'GUARD', 55, 'Reduz o próximo golpe.'),
-    move('mage.burst', 'Rajada', 'DAMAGE', 15, 'Magia em cheio.'),
-    move('mage.heal', 'Cura', 'HEAL', 9, 'Recupera um pouco de HP.'),
-  ],
-  ROGUE: [
-    move('rogue.stab', 'Punhalada', 'DAMAGE', 9, 'Golpe curto.'),
-    move('rogue.dodge', 'Esquiva', 'GUARD', 45, 'Desvia o próximo golpe.'),
-    move('rogue.low', 'Golpe baixo', 'DAMAGE', 13, 'Atinge em cheio.'),
-    move('rogue.sip', 'Trago', 'HEAL', 7, 'Recupera um pouco de HP.'),
-  ],
-};
-
-export const ENEMY_MOVES: Record<Category, readonly BattleMove[]> = {
-  STUDY: [
-    move('study.ping', 'Notificação', 'DAMAGE', 6, 'Puxa a atenção.'),
-    move('study.tab', 'Aba nova', 'DAMAGE', 10, 'Abre mais uma distração.'),
-    move('study.scroll', 'Rolagem', 'GUARD', 30, 'Escorrega do golpe.'),
-    move('study.nap', 'Cochilo', 'HEAL', 6, 'Descansa um segundo.'),
-  ],
-  WORK: [
-    move('work.rush', 'Urgência', 'DAMAGE', 7, 'Aperta o prazo.'),
-    move('work.meeting', 'Reunião', 'DAMAGE', 11, 'Toma a hora inteira.'),
-    move('work.protocol', 'Protocolo', 'GUARD', 35, 'Se esconde na regra.'),
-    move('work.coffee', 'Café', 'HEAL', 6, 'Ganha um fôlego.'),
-  ],
-  HEALTH: [
-    move('health.delay', 'Adiar', 'DAMAGE', 5, 'Empurra para depois.'),
-    move('health.couch', 'Sofá', 'DAMAGE', 10, 'Puxa de volta.'),
-    move('health.excuse', 'Desculpa', 'GUARD', 40, 'Arruma uma razão.'),
-    move('health.snooze', 'Soneca', 'HEAL', 8, 'Fecha o olho.'),
-  ],
-  HOME: [
-    move('home.pile', 'Pilha', 'DAMAGE', 6, 'Cresce no canto.'),
-    move('home.clutter', 'Entulho', 'DAMAGE', 11, 'Ocupa a passagem.'),
-    move('home.shove', 'Empurrar', 'GUARD', 30, 'Joga para debaixo.'),
-    move('home.tidy', 'Recolher', 'HEAL', 5, 'Some um pouco.'),
-  ],
-  OTHER: [
-    move('other.whisper', 'Sussurro', 'DAMAGE', 6, 'Fala baixo.'),
-    move('other.claw', 'Garra', 'DAMAGE', 11, 'Arranha fundo.'),
-    move('other.mist', 'Névoa', 'GUARD', 35, 'Some na frente.'),
-    move('other.reform', 'Reforma', 'HEAL', 6, 'Se refaz.'),
-  ],
-};
-
-export function heroBattleStats(character: Character): {
-  maxHp: number;
-  attack: number;
-  defense: number;
-} {
-  const vitality = character.attributes.vitality;
+function skill(spec: SkillSpec): BattleSkill {
   return {
-    maxHp: 24 + vitality * 6,
-    attack: character.attributes[CLASS_OFFENSE[character.characterClass]],
-    defense: Math.floor(vitality / 2),
+    cost: 0,
+    cooldown: 0,
+    power: 0,
+    ratio: 0,
+    ...spec,
+    assetKey: `skill.${spec.id}`,
   };
 }
 
-/** Todo golpe causa pelo menos 1. Guarda reduz antes da defesa. */
-export function battleDamage(
-  power: number,
-  attack: number,
-  guardPercent: number,
-  defense: number,
-): number {
-  const raw = power + attack;
-  const guarded = guardPercent > 0 ? Math.floor((raw * (100 - guardPercent)) / 100) : raw;
-  return Math.max(1, guarded - defense);
+/** Defender existe para todas as classes: segura o próximo golpe e recupera energia. */
+function defendSkill(classKey: string): BattleSkill {
+  return skill({
+    id: `${classKey}.defend`,
+    name: 'Respirar Fundo',
+    tag: 'Guarda 50% · +3 energia',
+    blurb: 'Respira fundo: o próximo golpe recebido dói metade e você recupera 3 de energia.',
+    kind: 'SUPPORT',
+    scaling: 'vitality',
+    applies: [{ status: 'GUARD', target: 'SELF', turns: 1, potency: 50 }],
+    energyGain: 3,
+    fx: 'SHIELD',
+  });
 }
 
-export function chooseEnemyMove(enemy: BattleActor, enemyTurns: number): BattleMove {
-  const count = enemy.moves.length;
-  for (let offset = 0; offset < count; offset += 1) {
-    const candidate = enemy.moves[(enemyTurns + offset) % count];
-    if (candidate.effect === 'HEAL' && enemy.hp >= enemy.maxHp) continue;
-    if (candidate.effect === 'GUARD' && enemy.guard > 0) continue;
-    return candidate;
+export const HERO_SKILLS: Record<CharacterClass, readonly BattleSkill[]> = {
+  WARRIOR: [
+    skill({
+      id: 'warrior.strike',
+      name: 'Vassourada',
+      tag: 'Dano físico · grátis',
+      blurb: 'Uma vassourada firme. Escala com Força.',
+      kind: 'PHYSICAL',
+      scaling: 'strength',
+      power: 5,
+      ratio: 1.3,
+      fx: 'SLASH',
+    }),
+    skill({
+      id: 'warrior.bash',
+      name: 'Chinelada',
+      tag: 'Trava 1 turno',
+      blurb: 'Arremessa o chinelo e o monstro fica travado, perdendo a próxima ação.',
+      kind: 'PHYSICAL',
+      cost: 5,
+      cooldown: 3,
+      scaling: 'strength',
+      power: 6,
+      ratio: 0.9,
+      applies: [{ status: 'STUN', target: 'TARGET', turns: 1 }],
+      fx: 'IMPACT',
+    }),
+    skill({
+      id: 'warrior.warcry',
+      name: 'Playlist Animada',
+      tag: 'Animado +40% dano · 3t',
+      blurb: 'Bota a música favorita: +40% de dano nos próximos 3 turnos.',
+      kind: 'SUPPORT',
+      cost: 4,
+      cooldown: 4,
+      scaling: 'strength',
+      applies: [{ status: 'EMPOWER', target: 'SELF', turns: 3, potency: 40 }],
+      fx: 'BUFF',
+    }),
+    skill({
+      id: 'warrior.wall',
+      name: 'Tampa de Panela',
+      tag: 'Escudo · escala Vitalidade',
+      blurb: 'Usa a tampa da panela como escudo. Absorve dano igual a 6 + 2,5 × Vitalidade.',
+      kind: 'SUPPORT',
+      cost: 4,
+      cooldown: 2,
+      scaling: 'vitality',
+      shield: { power: 6, ratio: 2.5 },
+      fx: 'SHIELD',
+    }),
+    skill({
+      id: 'warrior.execute',
+      name: 'Faxina Final',
+      tag: 'Dobro com vida ≤35%',
+      blurb: 'Arremate da faxina. Causa o dobro de dano se o monstro tiver 35% de vida ou menos.',
+      kind: 'PHYSICAL',
+      cost: 7,
+      cooldown: 2,
+      scaling: 'strength',
+      power: 8,
+      ratio: 1.3,
+      bonus: { when: 'TARGET_LOW_HP', multiplier: 2 },
+      fx: 'SLASH',
+    }),
+    defendSkill('warrior'),
+  ],
+  MAGE: [
+    skill({
+      id: 'mage.spark',
+      name: 'Post-it',
+      tag: 'Dano mental · grátis',
+      blurb: 'Cola um lembrete certeiro. Escala com Inteligência e ignora metade da defesa.',
+      kind: 'MAGIC',
+      scaling: 'intelligence',
+      power: 4,
+      ratio: 1.0,
+      fx: 'ARCANE',
+    }),
+    skill({
+      id: 'mage.fireball',
+      name: 'Café Fervendo',
+      tag: 'Fervendo por 3 turnos',
+      blurb: 'Café quente demais: dano e fervura por 3 turnos. A fervura escala com Inteligência.',
+      kind: 'MAGIC',
+      cost: 6,
+      cooldown: 2,
+      scaling: 'intelligence',
+      power: 5,
+      ratio: 1.0,
+      applies: [{ status: 'BURN', target: 'TARGET', turns: 3, potency: 2, potencyRatio: 0.4 }],
+      fx: 'FIRE',
+    }),
+    skill({
+      id: 'mage.frost',
+      name: 'Modo Avião',
+      tag: 'Trava 1 turno',
+      blurb: 'Corta as notificações e o monstro fica travado, perdendo a próxima ação.',
+      kind: 'MAGIC',
+      cost: 6,
+      cooldown: 3,
+      scaling: 'intelligence',
+      power: 3,
+      ratio: 0.8,
+      applies: [{ status: 'STUN', target: 'TARGET', turns: 1 }],
+      fx: 'ICE',
+    }),
+    skill({
+      id: 'mage.barrier',
+      name: 'Agenda em Dia',
+      tag: 'Escudo · escala Inteligência',
+      blurb: 'Tudo planejado: escudo que absorve 3 + 1,6 × Inteligência de dano.',
+      kind: 'SUPPORT',
+      cost: 4,
+      cooldown: 2,
+      scaling: 'intelligence',
+      shield: { power: 3, ratio: 1.6 },
+      fx: 'SHIELD',
+    }),
+    skill({
+      id: 'mage.meteor',
+      name: 'Lista Riscada',
+      tag: '+50% em alvo fervendo',
+      blurb: 'Risca a lista inteira. Causa 50% a mais se o monstro estiver fervendo.',
+      kind: 'MAGIC',
+      cost: 9,
+      cooldown: 3,
+      scaling: 'intelligence',
+      power: 7,
+      ratio: 1.4,
+      bonus: { when: 'TARGET_BURNING', multiplier: 1.5 },
+      fx: 'ARCANE',
+    }),
+    defendSkill('mage'),
+  ],
+  ROGUE: [
+    skill({
+      id: 'rogue.stab',
+      name: 'Atalho',
+      tag: 'Dano físico · +15% crítico',
+      blurb:
+        'Acha o caminho mais curto: 15 pontos a mais de chance de crítico. Escala com Agilidade.',
+      kind: 'PHYSICAL',
+      scaling: 'agility',
+      power: 4,
+      ratio: 1.0,
+      critBonus: 15,
+      fx: 'SLASH',
+    }),
+    skill({
+      id: 'rogue.venom',
+      name: 'Lembrete Chato',
+      tag: 'Incomoda · acumula até 3x',
+      blurb: 'Lembrete que não para de tocar: incomoda por 3 turnos. Cada uso soma mais um, até 3.',
+      kind: 'PHYSICAL',
+      cost: 4,
+      scaling: 'agility',
+      power: 3,
+      ratio: 0.6,
+      applies: [{ status: 'POISON', target: 'TARGET', turns: 3, potency: 3, potencyRatio: 0.4 }],
+      fx: 'POISON',
+    }),
+    skill({
+      id: 'rogue.smoke',
+      name: 'Sair de Fininho',
+      tag: 'Esquiva o próximo golpe',
+      blurb: 'Some sem ninguém ver. O próximo golpe do monstro erra.',
+      kind: 'SUPPORT',
+      cost: 5,
+      cooldown: 3,
+      scaling: 'agility',
+      applies: [{ status: 'EVADE', target: 'SELF', turns: 1 }],
+      fx: 'SMOKE',
+    }),
+    skill({
+      id: 'rogue.backstab',
+      name: 'Pegadinha',
+      tag: 'Crítico certo se incomodado',
+      blurb: 'Pega o monstro de surpresa. Sempre crítico se ele estiver incomodado.',
+      kind: 'PHYSICAL',
+      cost: 7,
+      cooldown: 2,
+      scaling: 'agility',
+      power: 7,
+      ratio: 1.6,
+      bonus: { when: 'TARGET_POISONED', multiplier: 1, guaranteedCrit: true },
+      fx: 'SHADOW',
+    }),
+    skill({
+      id: 'rogue.flurry',
+      name: 'Multitarefa',
+      tag: '3 golpes · cada um pode critar',
+      blurb: 'Três coisas ao mesmo tempo. Cada golpe rola crítico separado.',
+      kind: 'PHYSICAL',
+      cost: 6,
+      cooldown: 3,
+      scaling: 'agility',
+      power: 2,
+      ratio: 0.7,
+      hits: 3,
+      fx: 'SLASH',
+    }),
+    defendSkill('rogue'),
+  ],
+};
+
+/**
+ * Habilidades liberadas pela árvore de talentos (ver `talents.ts`).
+ * Ficam fora de `HERO_SKILLS` porque o herói começa sem elas.
+ */
+export const TALENT_SKILLS: Record<CharacterClass, readonly BattleSkill[]> = {
+  WARRIOR: [
+    skill({
+      id: 'warrior.mop',
+      name: 'Esfregão Giratório',
+      tag: '2 golpes',
+      blurb: 'Gira o esfregão e acerta duas vezes. Cada golpe pode critar. Escala com Força.',
+      kind: 'PHYSICAL',
+      cost: 4,
+      cooldown: 2,
+      scaling: 'strength',
+      power: 3,
+      ratio: 0.8,
+      hits: 2,
+      fx: 'SLASH',
+    }),
+    skill({
+      id: 'warrior.lunchbox',
+      name: 'Marmita Caprichada',
+      tag: 'Cura · escala Vitalidade',
+      blurb: 'Pausa para comer bem: recupera 6 + 1,5 × Vitalidade de vida.',
+      kind: 'SUPPORT',
+      cost: 5,
+      cooldown: 3,
+      scaling: 'vitality',
+      heal: { power: 6, ratio: 1.5 },
+      fx: 'HEAL',
+    }),
+    skill({
+      id: 'warrior.alarm',
+      name: 'Despertador',
+      tag: 'Deixa o monstro cansado',
+      blurb: 'Toca o despertador na orelha do monstro: dano e −30% de dano dele por 2 turnos.',
+      kind: 'PHYSICAL',
+      cost: 4,
+      cooldown: 3,
+      scaling: 'strength',
+      power: 4,
+      ratio: 0.7,
+      applies: [{ status: 'WEAKEN', target: 'TARGET', turns: 2, potency: 30 }],
+      fx: 'IMPACT',
+    }),
+    skill({
+      id: 'warrior.vacuum',
+      name: 'Aspirador Turbo',
+      tag: 'Golpe enorme · +50% com vida ≤35%',
+      blurb:
+        'Liga o aspirador no máximo: 12 + 1,8 × Força de dano, 50% a mais se o monstro tiver 35% de vida ou menos.',
+      kind: 'PHYSICAL',
+      cost: 10,
+      cooldown: 4,
+      scaling: 'strength',
+      power: 12,
+      ratio: 1.8,
+      bonus: { when: 'TARGET_LOW_HP', multiplier: 1.5 },
+      fx: 'IMPACT',
+    }),
+  ],
+  MAGE: [
+    skill({
+      id: 'mage.highlighter',
+      name: 'Marca-Texto',
+      tag: 'Dano mental · +25% crítico',
+      blurb:
+        'Destaca o ponto fraco: 25 pontos a mais de chance de crítico. Escala com Inteligência.',
+      kind: 'MAGIC',
+      cost: 3,
+      cooldown: 1,
+      scaling: 'intelligence',
+      power: 5,
+      ratio: 1.1,
+      critBonus: 25,
+      fx: 'ARCANE',
+    }),
+    skill({
+      id: 'mage.tea',
+      name: 'Chá de Camomila',
+      tag: 'Descansando 3 turnos',
+      blurb:
+        'Uma xícara calma: recupera 3 + 0,6 × Inteligência de vida a cada turno, por 3 turnos.',
+      kind: 'SUPPORT',
+      cost: 4,
+      cooldown: 4,
+      scaling: 'intelligence',
+      applies: [{ status: 'REGEN', target: 'SELF', turns: 3, potency: 3, potencyRatio: 0.6 }],
+      fx: 'HEAL',
+    }),
+    skill({
+      id: 'mage.pomodoro',
+      name: 'Pomodoro',
+      tag: '+6 energia · Animado 2t',
+      blurb: '25 minutos de foco: recupera 6 de energia e ganha +30% de dano por 2 turnos.',
+      kind: 'SUPPORT',
+      cooldown: 4,
+      scaling: 'intelligence',
+      energyGain: 6,
+      applies: [{ status: 'EMPOWER', target: 'SELF', turns: 2, potency: 30 }],
+      fx: 'BUFF',
+    }),
+    skill({
+      id: 'mage.allnighter',
+      name: 'Virada de Estudo',
+      tag: 'Golpe enorme · você cansa',
+      blurb:
+        'Estuda a noite toda: 10 + 2 × Inteligência de dano mental, mas você fica cansado (−30% de dano) por 1 turno.',
+      kind: 'MAGIC',
+      cost: 11,
+      cooldown: 4,
+      scaling: 'intelligence',
+      power: 10,
+      ratio: 2,
+      applies: [{ status: 'WEAKEN', target: 'SELF', turns: 1, potency: 30 }],
+      fx: 'ARCANE',
+    }),
+  ],
+  ROGUE: [
+    skill({
+      id: 'rogue.coupon',
+      name: 'Cupom Relâmpago',
+      tag: 'Rouba vida',
+      blurb:
+        'Leva vantagem na hora certa: dano e metade dele volta como vida. Escala com Agilidade.',
+      kind: 'PHYSICAL',
+      cost: 4,
+      cooldown: 2,
+      scaling: 'agility',
+      power: 5,
+      ratio: 1.1,
+      drain: 0.5,
+      fx: 'SHADOW',
+    }),
+    skill({
+      id: 'rogue.umbrella',
+      name: 'Guarda-Chuva',
+      tag: 'Escudo · escala Agilidade',
+      blurb: 'Abre o guarda-chuva na hora: escudo que absorve 4 + 1,4 × Agilidade de dano.',
+      kind: 'SUPPORT',
+      cost: 4,
+      cooldown: 2,
+      scaling: 'agility',
+      shield: { power: 4, ratio: 1.4 },
+      fx: 'SHIELD',
+    }),
+    skill({
+      id: 'rogue.energy',
+      name: 'Energético',
+      tag: '+5 energia · Animado 2t',
+      blurb: 'Uma lata gelada: recupera 5 de energia e ganha +30% de dano por 2 turnos.',
+      kind: 'SUPPORT',
+      cooldown: 4,
+      scaling: 'agility',
+      energyGain: 5,
+      applies: [{ status: 'EMPOWER', target: 'SELF', turns: 2, potency: 30 }],
+      fx: 'BUFF',
+    }),
+    skill({
+      id: 'rogue.delivery',
+      name: 'Entrega Expressa',
+      tag: '4 golpes · incomoda',
+      blurb:
+        'Quatro entregas seguidas, cada uma pode critar, e o monstro fica incomodado por 3 turnos.',
+      kind: 'PHYSICAL',
+      cost: 10,
+      cooldown: 4,
+      scaling: 'agility',
+      power: 3,
+      ratio: 0.8,
+      hits: 4,
+      applies: [{ status: 'POISON', target: 'TARGET', turns: 3, potency: 3, potencyRatio: 0.4 }],
+      fx: 'POISON',
+    }),
+  ],
+};
+
+/** Respirar Fundo da classe: fica sempre na luta, fora do loadout. */
+export function defendSkillFor(characterClass: CharacterClass): BattleSkill {
+  return HERO_SKILLS[characterClass][HERO_SKILLS[characterClass].length - 1];
+}
+
+export const ENEMY_SKILLS: Record<Category, readonly BattleSkill[]> = {
+  STUDY: [
+    skill({
+      id: 'study.ping',
+      name: 'Notificação',
+      tag: 'Dano mágico',
+      blurb: 'Puxa a atenção. Tem chance alta de crítico.',
+      kind: 'MAGIC',
+      scaling: 'intelligence',
+      power: 5,
+      ratio: 1,
+      critBonus: 10,
+      fx: 'ARCANE',
+    }),
+    skill({
+      id: 'study.scroll',
+      name: 'Rolagem Infinita',
+      tag: 'Deixa você cansado',
+      blurb: 'Você fica cansado por 2 turnos: −30% de dano.',
+      kind: 'MAGIC',
+      cooldown: 3,
+      scaling: 'intelligence',
+      power: 2,
+      ratio: 0.5,
+      applies: [{ status: 'WEAKEN', target: 'TARGET', turns: 2, potency: 30 }],
+      fx: 'DEBUFF',
+    }),
+    skill({
+      id: 'study.tabs',
+      name: 'Abas Novas',
+      tag: '2 golpes',
+      blurb: 'Abre duas distrações seguidas.',
+      kind: 'MAGIC',
+      cooldown: 2,
+      scaling: 'intelligence',
+      power: 3,
+      ratio: 0.6,
+      hits: 2,
+      fx: 'IMPACT',
+    }),
+    skill({
+      id: 'study.nap',
+      name: 'Modo Soneca',
+      tag: 'Cura',
+      blurb: 'Recupera vida.',
+      kind: 'SUPPORT',
+      cooldown: 4,
+      scaling: 'intelligence',
+      heal: { power: 6, ratio: 1 },
+      fx: 'HEAL',
+    }),
+  ],
+  WORK: [
+    skill({
+      id: 'work.rush',
+      name: 'Urgência',
+      tag: 'Dano físico',
+      blurb: 'Aperta o prazo.',
+      kind: 'PHYSICAL',
+      scaling: 'strength',
+      power: 5,
+      ratio: 1,
+      fx: 'IMPACT',
+    }),
+    skill({
+      id: 'work.meeting',
+      name: 'Reunião Surpresa',
+      tag: 'Trava você',
+      blurb: 'Você perde a próxima ação.',
+      kind: 'PHYSICAL',
+      cooldown: 4,
+      scaling: 'strength',
+      power: 3,
+      ratio: 0.6,
+      applies: [{ status: 'STUN', target: 'TARGET', turns: 1 }],
+      fx: 'IMPACT',
+    }),
+    skill({
+      id: 'work.deadline',
+      name: 'Prazo Apertado',
+      tag: 'Estresse 3 turnos',
+      blurb: 'O estresse ferve por 3 turnos.',
+      kind: 'MAGIC',
+      cooldown: 3,
+      scaling: 'strength',
+      power: 3,
+      ratio: 0.5,
+      applies: [{ status: 'BURN', target: 'TARGET', turns: 3, potency: 2, potencyRatio: 0.3 }],
+      fx: 'FIRE',
+    }),
+    skill({
+      id: 'work.overtime',
+      name: 'Hora Extra',
+      tag: 'Animado',
+      blurb: 'O caos ganha +40% de dano por 2 turnos.',
+      kind: 'SUPPORT',
+      cooldown: 4,
+      scaling: 'strength',
+      applies: [{ status: 'EMPOWER', target: 'SELF', turns: 2, potency: 40 }],
+      fx: 'BUFF',
+    }),
+  ],
+  HEALTH: [
+    skill({
+      id: 'health.couch',
+      name: 'Sofá Macio',
+      tag: 'Dano físico',
+      blurb: 'Puxa você de volta.',
+      kind: 'PHYSICAL',
+      scaling: 'strength',
+      power: 4,
+      ratio: 1,
+      fx: 'IMPACT',
+    }),
+    skill({
+      id: 'health.snooze',
+      name: 'Soneca',
+      tag: 'Regenera 3 turnos',
+      blurb: 'Recupera vida a cada turno por 3 turnos.',
+      kind: 'SUPPORT',
+      cooldown: 4,
+      scaling: 'vitality',
+      applies: [{ status: 'REGEN', target: 'SELF', turns: 3, potency: 3, potencyRatio: 0.5 }],
+      fx: 'HEAL',
+    }),
+    skill({
+      id: 'health.excuse',
+      name: 'Desculpa Pronta',
+      tag: 'Escudo',
+      blurb: 'Arruma uma razão e absorve dano.',
+      kind: 'SUPPORT',
+      cooldown: 3,
+      scaling: 'vitality',
+      shield: { power: 5, ratio: 1.5 },
+      fx: 'SHIELD',
+    }),
+    skill({
+      id: 'health.heavy',
+      name: 'Peso nas Pernas',
+      tag: 'Deixa você cansado',
+      blurb: 'Você fica cansado por 2 turnos: −30% de dano.',
+      kind: 'MAGIC',
+      cooldown: 3,
+      scaling: 'intelligence',
+      power: 2,
+      ratio: 0.4,
+      applies: [{ status: 'WEAKEN', target: 'TARGET', turns: 2, potency: 30 }],
+      fx: 'DEBUFF',
+    }),
+  ],
+  HOME: [
+    skill({
+      id: 'home.pile',
+      name: 'Pilha de Roupa',
+      tag: 'Dano físico',
+      blurb: 'Cresce no canto e cai em cima.',
+      kind: 'PHYSICAL',
+      scaling: 'strength',
+      power: 5,
+      ratio: 1,
+      fx: 'IMPACT',
+    }),
+    skill({
+      id: 'home.dust',
+      name: 'Poeira',
+      tag: 'Alergia 3 turnos',
+      blurb: 'Poeira que dá alergia e incomoda por 3 turnos.',
+      kind: 'MAGIC',
+      cooldown: 2,
+      scaling: 'intelligence',
+      power: 2,
+      ratio: 0.4,
+      applies: [{ status: 'POISON', target: 'TARGET', turns: 3, potency: 2, potencyRatio: 0.3 }],
+      fx: 'POISON',
+    }),
+    skill({
+      id: 'home.avalanche',
+      name: 'Avalanche',
+      tag: 'Dano pesado',
+      blurb: 'Tudo desaba de uma vez.',
+      kind: 'PHYSICAL',
+      cooldown: 3,
+      scaling: 'strength',
+      power: 8,
+      ratio: 1.4,
+      fx: 'IMPACT',
+    }),
+    skill({
+      id: 'home.rug',
+      name: 'Debaixo do Tapete',
+      tag: 'Esquiva',
+      blurb: 'Se esconde. Seu próximo golpe erra.',
+      kind: 'SUPPORT',
+      cooldown: 4,
+      scaling: 'agility',
+      applies: [{ status: 'EVADE', target: 'SELF', turns: 1 }],
+      fx: 'SMOKE',
+    }),
+  ],
+  OTHER: [
+    skill({
+      id: 'other.claw',
+      name: 'Garra Sombria',
+      tag: 'Dano físico',
+      blurb: 'Arranha fundo.',
+      kind: 'PHYSICAL',
+      scaling: 'strength',
+      power: 5,
+      ratio: 1,
+      fx: 'SHADOW',
+    }),
+    skill({
+      id: 'other.whisper',
+      name: 'Sussurro',
+      tag: 'Deixa você cansado',
+      blurb: 'Você fica cansado por 2 turnos: −30% de dano.',
+      kind: 'MAGIC',
+      cooldown: 3,
+      scaling: 'intelligence',
+      power: 2,
+      ratio: 0.4,
+      applies: [{ status: 'WEAKEN', target: 'TARGET', turns: 2, potency: 30 }],
+      fx: 'DEBUFF',
+    }),
+    skill({
+      id: 'other.drain',
+      name: 'Drenar',
+      tag: 'Rouba vida',
+      blurb: 'Causa dano e recupera metade como vida.',
+      kind: 'MAGIC',
+      cooldown: 2,
+      scaling: 'intelligence',
+      power: 4,
+      ratio: 0.9,
+      drain: 0.5,
+      fx: 'SHADOW',
+    }),
+    skill({
+      id: 'other.mist',
+      name: 'Névoa',
+      tag: 'Esquiva',
+      blurb: 'Some na névoa. Seu próximo golpe erra.',
+      kind: 'SUPPORT',
+      cooldown: 4,
+      scaling: 'agility',
+      applies: [{ status: 'EVADE', target: 'SELF', turns: 1 }],
+      fx: 'SMOKE',
+    }),
+  ],
+};
+
+// ---------------------------------------------------------------------------
+// Atributos → números da luta
+// ---------------------------------------------------------------------------
+
+export function heroMaxHp(attributes: Attributes): number {
+  return 24 + attributes.vitality * 6;
+}
+
+export function heroMaxEnergy(attributes: Attributes): number {
+  return 12 + attributes.intelligence * 2;
+}
+
+export function defenseFor(attributes: Attributes): number {
+  return Math.floor(attributes.vitality / 2);
+}
+
+/** Agilidade dá crítico (5% + 3 por ponto, teto 50%). */
+export function critChanceFor(attributes: Attributes): number {
+  return Math.min(50, 5 + attributes.agility * 3);
+}
+
+/** Agilidade dá esquiva de golpe físico (2 por ponto, teto 25%). */
+export function dodgeChanceFor(attributes: Attributes): number {
+  return Math.min(25, attributes.agility * 2);
+}
+
+export function heroBattleStats(character: Character): {
+  maxHp: number;
+  maxEnergy: number;
+  attack: number;
+  defense: number;
+  critChance: number;
+  dodgeChance: number;
+} {
+  const attributes = character.attributes;
+  return {
+    maxHp: heroMaxHp(attributes),
+    maxEnergy: heroMaxEnergy(attributes),
+    attack: attributes[CLASS_OFFENSE[character.characterClass]],
+    defense: defenseFor(attributes),
+    critChance: critChanceFor(attributes),
+    dodgeChance: dodgeChanceFor(attributes),
+  };
+}
+
+export function enemyAttributes(difficulty: Difficulty, heroLevel: number): Attributes {
+  const base = ENEMY_SCALE[difficulty].attributes;
+  const bump = Math.floor(Math.max(0, heroLevel - 1) / 2);
+  return {
+    strength: base.strength + bump,
+    intelligence: base.intelligence + bump,
+    agility: base.agility,
+    vitality: base.vitality + bump,
+  };
+}
+
+export function enemyMaxHp(difficulty: Difficulty, heroLevel: number): number {
+  return ENEMY_SCALE[difficulty].hp + ENEMY_HP_PER_LEVEL * Math.max(0, heroLevel - 1);
+}
+
+// ---------------------------------------------------------------------------
+// Sorte com semente (mulberry32)
+// ---------------------------------------------------------------------------
+
+export function nextRandom(seed: number): [number, number] {
+  const next = (seed + 0x6d2b79f5) >>> 0;
+  let t = next;
+  t = Math.imul(t ^ (t >>> 15), t | 1);
+  t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+  const value = ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  return [value, next];
+}
+
+// ---------------------------------------------------------------------------
+// Consultas
+// ---------------------------------------------------------------------------
+
+export function hasStatus(actor: BattleActor, status: StatusId): boolean {
+  return actor.statuses.some((entry) => entry.id === status);
+}
+
+function statusOf(actor: BattleActor, status: StatusId): StatusEffect | undefined {
+  return actor.statuses.find((entry) => entry.id === status);
+}
+
+export type SkillBlock = 'COOLDOWN' | 'ENERGY' | null;
+
+/** Por que a habilidade não pode ser usada agora (ou null se pode). */
+export function skillBlock(actor: BattleActor, skillEntry: BattleSkill): SkillBlock {
+  if ((actor.cooldowns[skillEntry.id] ?? 0) > 0) return 'COOLDOWN';
+  if (actor.side === 'PLAYER' && skillEntry.cost > actor.energy) return 'ENERGY';
+  return null;
+}
+
+function scaled(actor: BattleActor, attribute: AttributeKey, power: number, ratio: number): number {
+  return power + actor.attributes[attribute] * ratio;
+}
+
+function conditionMet(target: BattleActor, condition: SkillCondition): boolean {
+  if (condition === 'TARGET_LOW_HP') return target.hp <= target.maxHp * 0.35;
+  if (condition === 'TARGET_POISONED') return hasStatus(target, 'POISON');
+  return hasStatus(target, 'BURN');
+}
+
+function damageMultiplier(user: BattleActor): number {
+  let multiplier = 1 + user.damageBonus / 100;
+  const empower = statusOf(user, 'EMPOWER');
+  if (empower) multiplier *= 1 + empower.potency / 100;
+  const weaken = statusOf(user, 'WEAKEN');
+  if (weaken) multiplier *= 1 - weaken.potency / 100;
+  return multiplier;
+}
+
+/**
+ * Dano de um golpe antes da sorte (sem crítico, sem esquiva, sem guarda).
+ * A tela mostra este número no botão; já inclui fúria, fraqueza e bônus condicional.
+ */
+export function previewDamage(user: BattleActor, target: BattleActor, entry: BattleSkill): number {
+  if (entry.power <= 0) return 0;
+  let raw = scaled(user, entry.scaling, entry.power, entry.ratio) * damageMultiplier(user);
+  if (entry.bonus && conditionMet(target, entry.bonus.when)) {
+    raw *= entry.bonus.multiplier;
+    if (entry.bonus.guaranteedCrit) raw *= CRIT_MULTIPLIER;
   }
-  return enemy.moves[0];
+  const defense = entry.kind === 'MAGIC' ? Math.floor(target.defense / 2) : target.defense;
+  return Math.max(1, Math.floor(raw) - defense) * (entry.hits ?? 1);
 }
 
-function copyMoves(moves: readonly BattleMove[]): BattleMove[] {
-  return moves.map((entry) => ({ ...entry }));
+/** Escudo que a habilidade daria agora (0 se não dá escudo). */
+export function previewShield(user: BattleActor, entry: BattleSkill): number {
+  if (!entry.shield) return 0;
+  const base = scaled(user, entry.scaling, entry.shield.power, entry.shield.ratio);
+  return Math.floor(base * (1 + user.shieldBonus / 100));
+}
+
+// ---------------------------------------------------------------------------
+// Resolução
+// ---------------------------------------------------------------------------
+
+interface Draft {
+  state: BattleState;
+  lines: string[];
+  events: BattleEvent[];
+}
+
+function actorOf(state: BattleState, side: BattleSide): BattleActor {
+  return side === 'PLAYER' ? state.hero : state.enemy;
+}
+
+function withActor(state: BattleState, actor: BattleActor): BattleState {
+  return actor.side === 'PLAYER' ? { ...state, hero: actor } : { ...state, enemy: actor };
+}
+
+function opposite(side: BattleSide): BattleSide {
+  return side === 'PLAYER' ? 'ENEMY' : 'PLAYER';
+}
+
+function emit(draft: Draft, event: Omit<BattleEvent, 'seq'>): void {
+  const seq = draft.state.eventSeq + 1;
+  draft.state = { ...draft.state, eventSeq: seq };
+  draft.events.push({ ...event, seq });
+}
+
+function roll(draft: Draft): number {
+  const [value, next] = nextRandom(draft.state.rng);
+  draft.state = { ...draft.state, rng: next };
+  return value;
+}
+
+function addStatus(actor: BattleActor, effect: StatusEffect): BattleActor {
+  const current = statusOf(actor, effect.id);
+  if (!current) return { ...actor, statuses: [...actor.statuses, effect] };
+  const merged: StatusEffect = {
+    ...current,
+    turns: Math.max(current.turns, effect.turns),
+    potency: Math.max(current.potency, effect.potency),
+    stacks:
+      effect.id === 'POISON' ? Math.min(POISON_MAX_STACKS, current.stacks + 1) : current.stacks,
+  };
+  return {
+    ...actor,
+    statuses: actor.statuses.map((entry) => (entry.id === effect.id ? merged : entry)),
+  };
+}
+
+function removeStatus(actor: BattleActor, status: StatusId): BattleActor {
+  return { ...actor, statuses: actor.statuses.filter((entry) => entry.id !== status) };
+}
+
+/** Aplica dano já calculado, passando pelo escudo. */
+function takeDamage(actor: BattleActor, amount: number): { actor: BattleActor; absorbed: number } {
+  const absorbed = Math.min(actor.shield, amount);
+  return {
+    actor: {
+      ...actor,
+      shield: actor.shield - absorbed,
+      hp: Math.max(0, actor.hp - (amount - absorbed)),
+    },
+    absorbed,
+  };
+}
+
+function strike(draft: Draft, userSide: BattleSide, entry: BattleSkill): number {
+  const targetSide = opposite(userSide);
+  let dealt = 0;
+  const hits = entry.hits ?? 1;
+  for (let hit = 0; hit < hits; hit += 1) {
+    const user = actorOf(draft.state, userSide);
+    let target = actorOf(draft.state, targetSide);
+    if (target.hp <= 0) break;
+
+    if (hasStatus(target, 'EVADE')) {
+      draft.state = withActor(draft.state, removeStatus(target, 'EVADE'));
+      draft.lines.push(`${target.name} esquivou!`);
+      emit(draft, { kind: 'MISS', target: targetSide, source: userSide, fx: entry.fx });
+      continue;
+    }
+    if (entry.kind === 'PHYSICAL' && roll(draft) * 100 < target.dodgeChance) {
+      draft.lines.push(`${target.name} desviou.`);
+      emit(draft, { kind: 'MISS', target: targetSide, source: userSide, fx: entry.fx });
+      continue;
+    }
+
+    let raw = scaled(user, entry.scaling, entry.power, entry.ratio) * damageMultiplier(user);
+    let guaranteedCrit = false;
+    if (entry.bonus && conditionMet(target, entry.bonus.when)) {
+      raw *= entry.bonus.multiplier;
+      guaranteedCrit = entry.bonus.guaranteedCrit === true;
+    }
+    const critChance = user.critChance + (entry.critBonus ?? 0);
+    const crit = guaranteedCrit || roll(draft) * 100 < critChance;
+    if (crit) raw *= CRIT_MULTIPLIER;
+
+    const guard = statusOf(target, 'GUARD');
+    if (guard) {
+      raw = (raw * (100 - guard.potency)) / 100;
+      target = removeStatus(target, 'GUARD');
+    }
+    const defense = entry.kind === 'MAGIC' ? Math.floor(target.defense / 2) : target.defense;
+    const amount = Math.max(1, Math.floor(raw) - defense);
+    const taken = takeDamage(target, amount);
+    draft.state = withActor(draft.state, taken.actor);
+    dealt += amount - taken.absorbed;
+
+    const critText = crit ? ' Crítico!' : '';
+    draft.lines.push(
+      taken.absorbed > 0
+        ? `${target.name} perde ${amount - taken.absorbed} de vida (escudo segurou ${taken.absorbed}).${critText}`
+        : `${target.name} perde ${amount} de vida.${critText}`,
+    );
+    emit(draft, {
+      kind: 'DAMAGE',
+      target: targetSide,
+      source: userSide,
+      amount,
+      crit,
+      fx: entry.fx,
+    });
+  }
+  return dealt;
+}
+
+function heal(draft: Draft, side: BattleSide, amount: number): void {
+  const actor = actorOf(draft.state, side);
+  const hp = Math.min(actor.maxHp, actor.hp + Math.max(0, Math.floor(amount)));
+  const gained = hp - actor.hp;
+  draft.state = withActor(draft.state, { ...actor, hp });
+  if (gained > 0) {
+    draft.lines.push(`${actor.name} recupera ${gained} de vida.`);
+    emit(draft, { kind: 'HEAL', target: side, source: side, amount: gained, fx: 'HEAL' });
+  }
+}
+
+function castSkill(draft: Draft, userSide: BattleSide, entry: BattleSkill): void {
+  const before = actorOf(draft.state, userSide);
+  draft.state = withActor(draft.state, {
+    ...before,
+    energy: Math.min(before.maxEnergy, before.energy - entry.cost + (entry.energyGain ?? 0)),
+    cooldowns:
+      entry.cooldown > 0 ? { ...before.cooldowns, [entry.id]: entry.cooldown } : before.cooldowns,
+  });
+  draft.lines.push(`${before.name} usou ${entry.name}.`);
+  emit(draft, {
+    kind: 'CAST',
+    target: entry.power > 0 ? opposite(userSide) : userSide,
+    source: userSide,
+    fx: entry.fx,
+    skillName: entry.name,
+    skillId: entry.id,
+  });
+
+  let dealt = 0;
+  if (entry.power > 0) dealt = strike(draft, userSide, entry);
+
+  if (entry.drain && dealt > 0) heal(draft, userSide, dealt * entry.drain);
+  if (entry.heal)
+    heal(draft, userSide, scaled(before, entry.scaling, entry.heal.power, entry.heal.ratio));
+
+  if (entry.shield) {
+    const amount = previewShield(before, entry);
+    const current = actorOf(draft.state, userSide);
+    draft.state = withActor(draft.state, { ...current, shield: current.shield + amount });
+    draft.lines.push(`${current.name} ganha escudo de ${amount}.`);
+    emit(draft, { kind: 'SHIELD', target: userSide, source: userSide, amount, fx: 'SHIELD' });
+  }
+
+  for (const application of entry.applies ?? []) {
+    const targetSide = application.target === 'SELF' ? userSide : opposite(userSide);
+    const target = actorOf(draft.state, targetSide);
+    if (target.hp <= 0) continue;
+    // Golpe que errou tudo não aplica efeito no alvo.
+    if (application.target === 'TARGET' && entry.power > 0 && dealt === 0) continue;
+    const potency = Math.floor(
+      (application.potency ?? 0) +
+        (application.potencyRatio ?? 0) * before.attributes[entry.scaling],
+    );
+    // Status no próprio turno ganha +1: ele já diminui no fim deste turno.
+    const turns = application.turns + (targetSide === userSide ? 1 : 0);
+    draft.state = withActor(
+      draft.state,
+      addStatus(target, { id: application.status, turns, potency, stacks: 1 }),
+    );
+    draft.lines.push(`${target.name}: ${STATUS_LABELS[application.status]}.`);
+    emit(draft, {
+      kind: 'STATUS',
+      target: targetSide,
+      source: userSide,
+      status: application.status,
+      fx: entry.fx,
+    });
+  }
+}
+
+/** Começo do turno: queimadura, veneno e regeneração agem. */
+function startOfTurn(draft: Draft, side: BattleSide): void {
+  const statuses = actorOf(draft.state, side).statuses;
+  for (const effect of statuses) {
+    const current = actorOf(draft.state, side);
+    if (current.hp <= 0) return;
+    if (effect.id === 'BURN' || effect.id === 'POISON') {
+      const amount = Math.max(1, effect.potency * (effect.id === 'POISON' ? effect.stacks : 1));
+      draft.state = withActor(draft.state, { ...current, hp: Math.max(0, current.hp - amount) });
+      draft.lines.push(
+        `${current.name} perde ${amount} de vida (${effect.id === 'BURN' ? 'fervura' : 'incômodo'}).`,
+      );
+      emit(draft, {
+        kind: 'TICK',
+        target: side,
+        source: opposite(side),
+        amount,
+        status: effect.id,
+        fx: effect.id === 'BURN' ? 'FIRE' : 'POISON',
+      });
+    }
+    if (effect.id === 'REGEN') heal(draft, side, effect.potency);
+  }
+}
+
+/** Fim do turno: status e recargas andam um passo. */
+function endOfTurn(draft: Draft, side: BattleSide): void {
+  const actor = actorOf(draft.state, side);
+  const statuses = actor.statuses
+    .map((entry) => ({ ...entry, turns: entry.turns - 1 }))
+    .filter((entry) => entry.turns > 0);
+  const cooldowns: Record<string, number> = {};
+  for (const [id, left] of Object.entries(actor.cooldowns)) {
+    if (left - 1 > 0) cooldowns[id] = left - 1;
+  }
+  draft.state = withActor(draft.state, { ...actor, statuses, cooldowns });
+}
+
+/**
+ * IA do monstro: com pouca vida, se cura ou se protege; em turnos alternados aplica
+ * um status que você ainda não tem; no resto, usa o golpe mais forte disponível.
+ */
+export function chooseEnemySkill(state: BattleState): BattleSkill {
+  const { enemy, hero } = state;
+  const ready = enemy.skills.filter((entry) => skillBlock(enemy, entry) == null);
+  const pool = ready.length > 0 ? ready : [enemy.skills[0]];
+  const hurt = enemy.hp <= enemy.maxHp * 0.45;
+
+  if (hurt) {
+    const sustain = pool.find(
+      (entry) =>
+        entry.heal != null ||
+        entry.shield != null ||
+        entry.drain != null ||
+        entry.applies?.some((item) => item.status === 'REGEN'),
+    );
+    if (sustain) return sustain;
+  }
+
+  if (state.enemyTurns % 2 === 1) {
+    const debuff = pool.find((entry) =>
+      entry.applies?.some((item) => item.target === 'TARGET' && !hasStatus(hero, item.status)),
+    );
+    if (debuff) return debuff;
+  }
+
+  if (!hurt && state.enemyTurns % 3 === 2) {
+    const buff = pool.find((entry) =>
+      entry.applies?.some((item) => item.target === 'SELF' && !hasStatus(enemy, item.status)),
+    );
+    if (buff) return buff;
+  }
+
+  const attacks = pool.filter((entry) => entry.power > 0);
+  if (attacks.length === 0) return pool[0];
+  return attacks.reduce((best, entry) =>
+    previewDamage(enemy, hero, entry) > previewDamage(enemy, hero, best) ? entry : best,
+  );
 }
 
 function logEntries(key: string, texts: readonly string[]): BattleLogEntry[] {
   return texts.map((text, index) => ({ id: `${key}:${index}`, text }));
 }
 
-interface ResolvedMove {
-  user: BattleActor;
-  other: BattleActor;
-  lines: string[];
-}
-
-function resolveMove(user: BattleActor, other: BattleActor, action: BattleMove): ResolvedMove {
-  const lines = [`${user.name} usou ${action.name}.`];
-
-  if (action.effect === 'DAMAGE') {
-    const amount = battleDamage(action.power, user.attack, other.guard, other.defense);
-    return {
-      user,
-      other: { ...other, hp: Math.max(0, other.hp - amount), guard: 0 },
-      lines: [...lines, `${other.name} perde ${amount} de HP.`],
-    };
-  }
-
-  if (action.effect === 'HEAL') {
-    const amount = action.power + user.defense;
-    const hp = Math.min(user.maxHp, user.hp + amount);
-    const gained = hp - user.hp;
-    return {
-      user: { ...user, hp },
-      other,
-      lines: [
-        ...lines,
-        gained > 0
-          ? `${user.name} recupera ${gained} de HP.`
-          : `${user.name} já está com HP cheio.`,
-      ],
-    };
-  }
-
+function finish(
+  base: BattleState,
+  draft: Draft,
+  key: string,
+  patch: Partial<BattleState>,
+): BattleState {
   return {
-    user: { ...user, guard: action.power },
-    other,
-    lines: [...lines, 'O próximo golpe vai doer menos.'],
+    ...draft.state,
+    ...patch,
+    log: [...base.log, ...logEntries(key, draft.lines)].slice(-30),
+    events: draft.events,
   };
 }
 
+// ---------------------------------------------------------------------------
+// API pública
+// ---------------------------------------------------------------------------
+
 export function startBattle(input: StartBattleInput): BattleState {
-  const stats = heroBattleStats(input.character);
-  const scale = ENEMY_SCALE[input.difficulty];
+  const { character } = input;
+  const stats = heroBattleStats(character);
+  const bonus: HeroBonus = { ...NO_BONUS, ...input.bonus };
+  stats.maxHp += bonus.maxHp;
+  stats.maxEnergy += bonus.maxEnergy;
+  stats.critChance = Math.min(60, stats.critChance + bonus.critChance);
   const villain = VILLAIN_BY_CATEGORY[input.category];
   const trimmed = input.heroName.trim();
   const heroName = trimmed.length > 0 ? trimmed : 'Herói';
+  const startHp =
+    input.heroHp == null
+      ? stats.maxHp
+      : Math.max(1, Math.min(stats.maxHp, Math.floor(input.heroHp)));
+  const level = Math.max(1, character.level);
+  const enemyAttrs = enemyAttributes(input.difficulty, level);
+  const enemyHp = enemyMaxHp(input.difficulty, level);
+
   const hero: BattleActor = {
     id: 'hero',
     name: heroName,
-    subtitle: CLASS_DEFAULTS[input.character.characterClass].label,
+    subtitle: `${CLASS_DEFAULTS[character.characterClass].label} · Nv ${level}`,
     side: 'PLAYER',
-    hp: stats.maxHp,
+    hp: startHp,
     maxHp: stats.maxHp,
-    guard: 0,
-    attack: stats.attack,
+    shield: 0,
+    energy: stats.maxEnergy,
+    maxEnergy: stats.maxEnergy,
+    energyLabel: CLASS_ENERGY_LABEL[character.characterClass],
+    attributes: { ...character.attributes },
     defense: stats.defense,
-    moves: copyMoves(HERO_MOVES[input.character.characterClass]),
-    assetKey: HERO_ASSET[input.character.characterClass],
+    critChance: stats.critChance,
+    dodgeChance: stats.dodgeChance,
+    damageBonus: bonus.damagePct,
+    shieldBonus: bonus.shieldPct,
+    statuses: [],
+    cooldowns: {},
+    skills:
+      input.skills && input.skills.length > 0
+        ? input.skills
+        : HERO_SKILLS[character.characterClass],
+    assetKey: HERO_ASSET[character.characterClass],
   };
   const enemy: BattleActor = {
     id: 'enemy',
     name: villain.name,
-    subtitle: DIFFICULTY_LABELS[input.difficulty],
+    subtitle: `${DIFFICULTY_LABELS[input.difficulty]} · Nv ${level}`,
     side: 'ENEMY',
-    hp: scale.hp,
-    maxHp: scale.hp,
-    guard: 0,
-    attack: scale.attack,
-    defense: 0,
-    moves: copyMoves(ENEMY_MOVES[input.category]),
+    hp: enemyHp,
+    maxHp: enemyHp,
+    shield: 0,
+    energy: 0,
+    maxEnergy: 0,
+    energyLabel: '',
+    attributes: enemyAttrs,
+    defense: defenseFor(enemyAttrs),
+    critChance: critChanceFor(enemyAttrs),
+    dodgeChance: dodgeChanceFor(enemyAttrs),
+    damageBonus: 0,
+    shieldBonus: 0,
+    statuses: [],
+    cooldowns: {},
+    skills: ENEMY_SKILLS[input.category],
     assetKey: ENEMY_ASSET[input.category],
   };
 
-  return {
+  const opening: BattleState = {
     phase: 'PLAYER_TURN',
     turn: 0,
     hero,
@@ -289,58 +1436,116 @@ export function startBattle(input: StartBattleInput): BattleState {
     lastPlayerMoveId: null,
     lastEnemyMoveId: null,
     enemyTurns: 0,
+    enemyIntentId: null,
+    events: [],
+    eventSeq: 0,
+    rng: (input.seed ?? 0x5eed) >>> 0,
     victoryTitle: villain.defeatedTitle,
   };
+  return { ...opening, enemyIntentId: chooseEnemySkill(opening).id };
 }
 
-export function applyPlayerMove(state: BattleState, moveId: string): BattleState {
+export function applyPlayerMove(state: BattleState, skillId: string): BattleState {
   if (state.phase !== 'PLAYER_TURN') return state;
-  const action = state.hero.moves.find((entry) => entry.id === moveId);
-  if (!action) return state;
+  const entry = state.hero.skills.find((item) => item.id === skillId);
+  if (!entry || skillBlock(state.hero, entry) != null) return state;
 
-  const resolved = resolveMove(state.hero, state.enemy, action);
+  const draft: Draft = { state: { ...state }, lines: [], events: [] };
+  castSkill(draft, 'PLAYER', entry);
   const turn = state.turn + 1;
-  const lines = [...resolved.lines];
-  let phase: BattlePhase = 'ENEMY_TURN';
-  if (resolved.other.hp <= 0) {
-    lines.push(state.victoryTitle);
-    phase = 'VICTORY';
+  const key = `p${turn}:${entry.id}`;
+
+  if (draft.state.enemy.hp <= 0) {
+    draft.lines.push(state.victoryTitle);
+    emit(draft, { kind: 'KO', target: 'ENEMY', source: 'PLAYER' });
+    return finish(state, draft, key, { phase: 'VICTORY', turn, lastPlayerMoveId: entry.id });
   }
 
-  return {
-    ...state,
-    phase,
-    turn,
-    hero: resolved.user,
-    enemy: resolved.other,
-    log: [...state.log, ...logEntries(`p${turn}:${action.id}`, lines)],
-    lastPlayerMoveId: action.id,
-  };
+  endOfTurn(draft, 'PLAYER');
+  return finish(state, draft, key, { phase: 'ENEMY_TURN', turn, lastPlayerMoveId: entry.id });
 }
 
+/**
+ * Turno do monstro, seguido da preparação do turno do herói.
+ * Se o herói estiver atordoado, ele perde a vez e a fase continua ENEMY_TURN:
+ * a tela chama `applyEnemyMove` de novo.
+ */
 export function applyEnemyMove(state: BattleState): BattleState {
   if (state.phase !== 'ENEMY_TURN') return state;
-
-  const action = chooseEnemyMove(state.enemy, state.enemyTurns);
-  const resolved = resolveMove(state.enemy, state.hero, action);
+  const draft: Draft = { state: { ...state }, lines: [], events: [] };
   const enemyTurns = state.enemyTurns + 1;
-  const lines = [...resolved.lines];
-  let phase: BattlePhase = 'PLAYER_TURN';
-  if (resolved.other.hp <= 0) {
-    lines.push(`${state.hero.name} caiu.`);
-    phase = 'DEFEAT';
-  } else if (state.turn >= MAX_BATTLE_TURNS) {
-    lines.push(`${state.hero.name} não aguenta mais.`);
-    phase = 'DEFEAT';
+  const key = `e${enemyTurns}`;
+  let lastEnemyMoveId = state.lastEnemyMoveId;
+
+  startOfTurn(draft, 'ENEMY');
+  if (draft.state.enemy.hp <= 0) {
+    draft.lines.push(state.victoryTitle);
+    emit(draft, { kind: 'KO', target: 'ENEMY', source: 'PLAYER' });
+    return finish(state, draft, key, { phase: 'VICTORY', enemyTurns });
   }
 
-  return {
-    ...state,
-    phase,
-    hero: resolved.other,
-    enemy: resolved.user,
-    log: [...state.log, ...logEntries(`e${enemyTurns}:${action.id}`, lines)],
-    lastEnemyMoveId: action.id,
-    enemyTurns,
+  if (hasStatus(draft.state.enemy, 'STUN')) {
+    draft.state = { ...draft.state, enemy: removeStatus(draft.state.enemy, 'STUN') };
+    draft.lines.push(`${draft.state.enemy.name} está travado e perde a vez.`);
+    emit(draft, { kind: 'SKIP', target: 'ENEMY', source: 'ENEMY', status: 'STUN' });
+  } else {
+    const intent = draft.state.enemy.skills.find((item) => item.id === state.enemyIntentId);
+    const action =
+      intent && skillBlock(draft.state.enemy, intent) == null
+        ? intent
+        : chooseEnemySkill(draft.state);
+    castSkill(draft, 'ENEMY', action);
+    lastEnemyMoveId = action.id;
+  }
+  endOfTurn(draft, 'ENEMY');
+
+  if (draft.state.hero.hp <= 0) {
+    draft.lines.push(`${state.hero.name} caiu.`);
+    emit(draft, { kind: 'KO', target: 'PLAYER', source: 'ENEMY' });
+    return finish(state, draft, key, { phase: 'DEFEAT', enemyTurns, lastEnemyMoveId });
+  }
+
+  // Preparação do turno do herói.
+  startOfTurn(draft, 'PLAYER');
+  const hero = draft.state.hero;
+  if (hero.hp <= 0) {
+    draft.lines.push(`${hero.name} caiu.`);
+    emit(draft, { kind: 'KO', target: 'PLAYER', source: 'ENEMY' });
+    return finish(state, draft, key, { phase: 'DEFEAT', enemyTurns, lastEnemyMoveId });
+  }
+  if (state.turn >= MAX_BATTLE_TURNS) {
+    draft.lines.push(`${hero.name} não aguenta mais.`);
+    return finish(state, draft, key, { phase: 'DEFEAT', enemyTurns, lastEnemyMoveId });
+  }
+
+  draft.state = {
+    ...draft.state,
+    hero: { ...hero, energy: Math.min(hero.maxEnergy, hero.energy + ENERGY_REGEN_PER_TURN) },
   };
+  const nextIntent = chooseEnemySkill({ ...draft.state, enemyTurns }).id;
+
+  if (hasStatus(draft.state.hero, 'STUN')) {
+    draft.state = { ...draft.state, hero: removeStatus(draft.state.hero, 'STUN') };
+    draft.lines.push(`${hero.name} está travado e perde a vez.`);
+    emit(draft, { kind: 'SKIP', target: 'PLAYER', source: 'PLAYER', status: 'STUN' });
+    endOfTurn(draft, 'PLAYER');
+    return finish(state, draft, key, {
+      phase: 'ENEMY_TURN',
+      turn: state.turn + 1,
+      enemyTurns,
+      lastEnemyMoveId,
+      enemyIntentId: nextIntent,
+    });
+  }
+
+  return finish(state, draft, key, {
+    phase: 'PLAYER_TURN',
+    enemyTurns,
+    lastEnemyMoveId,
+    enemyIntentId: nextIntent,
+  });
+}
+
+export function enemyIntent(state: BattleState): BattleSkill | null {
+  return state.enemy.skills.find((entry) => entry.id === state.enemyIntentId) ?? null;
 }

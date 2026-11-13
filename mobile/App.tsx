@@ -20,6 +20,7 @@ import {
 } from './src/domain/completeQuest';
 import { celebrationLine, weekShareText, UNDO_COMPLETION_MS } from './src/domain/engagement';
 import { newlyUnlockedAchievements, spendAttributePoint } from './src/domain/progression';
+import { battleSkillsFor, heroBonus } from './src/domain/talents';
 import {
   addQuest,
   clearCompletedQuests,
@@ -46,6 +47,13 @@ import type {
   PlayerSettings,
 } from './src/domain/types';
 import { localIsoDate } from './src/domain/dates';
+import {
+  battleStartHp,
+  currentHeroHp,
+  heroMaxHpFor,
+  minutesUntilFullHp,
+  settleHeroVitals,
+} from './src/domain/vitals';
 import { syncDailyReminder } from './src/platform/reminder';
 import { playVictorySound } from './src/platform/sound';
 import { buildVictoryEvent, type QuestVictoryEvent } from './src/domain/victory';
@@ -67,8 +75,22 @@ const LOAD_NOTICE: Record<LoadStatus, string | null> = {
 };
 
 const FEEDBACK_VISIBLE_MS = 4200;
-/** Pausa para ler o golpe do herói antes do monstro agir. Reduzir movimento zera. */
-const ENEMY_TURN_MS = 450;
+/** Pausa para ver o golpe do herói (animação e números) antes do monstro agir. */
+const ENEMY_TURN_MS = 1000;
+/** Com "Reduzir movimento" não há animação, mas o texto ainda precisa ser lido. */
+const ENEMY_TURN_REDUCED_MS = 400;
+
+function vitalsLine(character: AppState['character'], now: Date): string {
+  const hp = currentHeroHp(character, now);
+  const maxHp = heroMaxHpFor(character);
+  const minutes = minutesUntilFullHp(character, now);
+  if (minutes <= 0) return `Vida cheia: ${hp}/${maxHp}`;
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  const wait =
+    hours > 0 ? `${hours}h${rest > 0 ? String(rest).padStart(2, '0') : ''}` : `${rest} min`;
+  return `Vida ${hp}/${maxHp} · enche em ${wait}`;
+}
 
 interface BattleSession {
   questId: string;
@@ -205,10 +227,27 @@ export function QuestLogApp({ store = stateStore }: QuestLogAppProps) {
       settledRef.current = true;
       clearEnemyTimer();
       const rewardTier: QuestRewardTier = phase === 'VICTORY' ? 'FULL' : 'REDUCED';
-      const result = completeQuest(base.snapshot, base.questId, new Date(base.startedAtMs), {
+      const completed = completeQuest(base.snapshot, base.questId, new Date(base.startedAtMs), {
         rewardTier,
       });
+      // A vida que sobrou fica guardada para a próxima luta (level up enche).
+      const endedAt = new Date();
+      const result = completed
+        ? {
+            ...completed,
+            state: {
+              ...completed.state,
+              character: settleHeroVitals(
+                completed.state.character,
+                battle.hero.hp,
+                endedAt,
+                completed.leveledUp,
+              ),
+            },
+          }
+        : null;
       const reward: BattleRewardView = {
+        vitalsLine: result ? vitalsLine(result.state.character, endedAt) : null,
         xpAwarded: result?.xpAwarded ?? 0,
         reduced: rewardTier === 'REDUCED' && (result?.xpAwarded ?? 0) > 0,
         habitLine: result
@@ -260,6 +299,35 @@ export function QuestLogApp({ store = stateStore }: QuestLogAppProps) {
     [clearEnemyTimer],
   );
 
+  /**
+   * Turno do monstro depois de uma pausa. Se o herói estiver atordoado, o motor
+   * devolve ENEMY_TURN de novo e o monstro age mais uma vez (via ref, sem recursão de hook).
+   */
+  const scheduleRef = useRef<() => void>(() => undefined);
+  const scheduleEnemyTurn = useCallback(() => {
+    clearEnemyTimer();
+    enemyTimer.current = setTimeout(
+      () => {
+        const live = sessionRef.current;
+        if (!live || live.reward || settledRef.current) return;
+        if (live.battle.phase !== 'ENEMY_TURN') return;
+        const after = applyEnemyMove(live.battle);
+        if (after.phase === 'VICTORY' || after.phase === 'DEFEAT') {
+          resolveBattle(live, after, after.phase);
+          return;
+        }
+        const updated: BattleSession = { ...live, battle: after };
+        sessionRef.current = updated;
+        setSession(updated);
+        if (after.phase === 'ENEMY_TURN') scheduleRef.current();
+      },
+      reduceMotion ? ENEMY_TURN_REDUCED_MS : ENEMY_TURN_MS,
+    );
+  }, [clearEnemyTimer, reduceMotion, resolveBattle]);
+  useEffect(() => {
+    scheduleRef.current = scheduleEnemyTurn;
+  }, [scheduleEnemyTurn]);
+
   const handlePlayerMove = useCallback(
     (moveId: string) => {
       const current = sessionRef.current;
@@ -274,25 +342,9 @@ export function QuestLogApp({ store = stateStore }: QuestLogAppProps) {
       const pending: BattleSession = { ...current, battle: nextBattle };
       sessionRef.current = pending;
       setSession(pending);
-      clearEnemyTimer();
-      enemyTimer.current = setTimeout(
-        () => {
-          const live = sessionRef.current;
-          if (!live || live.reward || settledRef.current) return;
-          if (live.battle.phase !== 'ENEMY_TURN') return;
-          const after = applyEnemyMove(live.battle);
-          if (after.phase === 'VICTORY' || after.phase === 'DEFEAT') {
-            resolveBattle(live, after, after.phase);
-            return;
-          }
-          const updated: BattleSession = { ...live, battle: after };
-          sessionRef.current = updated;
-          setSession(updated);
-        },
-        reduceMotion ? 0 : ENEMY_TURN_MS,
-      );
+      scheduleEnemyTurn();
     },
-    [clearEnemyTimer, reduceMotion, resolveBattle],
+    [resolveBattle, scheduleEnemyTurn],
   );
 
   const dismissBattle = useCallback(() => {
@@ -326,6 +378,10 @@ export function QuestLogApp({ store = stateStore }: QuestLogAppProps) {
             category: quest.category,
             difficulty: quest.difficulty,
             heroName: current.character.name,
+            heroHp: battleStartHp(current.character, now),
+            seed: now.getTime() >>> 0,
+            skills: battleSkillsFor(current.character),
+            bonus: heroBonus(current.character),
           }),
           reward: null,
           leveledUp: false,
@@ -517,6 +573,16 @@ export function QuestLogApp({ store = stateStore }: QuestLogAppProps) {
     [clearUndo],
   );
 
+  /** Talentos, loadout e reset de atributos: casos de uso que devolvem null quando não dá. */
+  const handleHeroChange = useCallback(
+    (change: (current: AppState) => AppState | null) => {
+      clearUndo();
+      setState((current) => (current ? (change(current) ?? current) : current));
+      playHaptic('TAP');
+    },
+    [clearUndo],
+  );
+
   const handleResetJourney = useCallback(() => {
     clearUndo();
     clearBattle();
@@ -555,6 +621,7 @@ export function QuestLogApp({ store = stateStore }: QuestLogAppProps) {
           onDeleteQuest={handleDeleteQuest}
           onClearCompleted={handleClearCompleted}
           onSpendAttributePoint={handleSpendAttributePoint}
+          onHeroChange={handleHeroChange}
           onResetJourney={handleResetJourney}
           onDismissFeedback={dismissFeedback}
           onDismissStorageNotice={dismissStorageNotice}

@@ -12,6 +12,8 @@ import type {
   UserStats,
 } from './types';
 import { clampDailyGoalTarget } from './rewards';
+import { sanitizeVitals } from './vitals';
+import { LOADOUT_SIZE, sanitizeIdList } from './talents';
 import { applyXp, maxXpForLevel } from './xp';
 
 export const HERO_NAME_MAX_LENGTH = 24;
@@ -103,7 +105,7 @@ function sanitizeCharacter(raw: unknown): Character {
   // XP acima do teto (save adulterado/antigo) vira níveis de verdade, não barra estourada.
   const progress = applyXp(level, 0, maxXp, toCount(raw.xp, 0));
 
-  return {
+  const character: Character = {
     name,
     characterClass,
     level: progress.level,
@@ -112,6 +114,13 @@ function sanitizeCharacter(raw: unknown): Character {
     attributes: sanitizeAttributes(raw.attributes, characterClass),
     attributePoints: toCount(raw.attributePoints, 0) + progress.attributePointsGained,
   };
+  const talents = sanitizeIdList(raw.talents, 32);
+  if (talents && talents.length > 0) character.talents = talents;
+  const loadout = sanitizeIdList(raw.loadout, LOADOUT_SIZE);
+  if (loadout && loadout.length > 0) character.loadout = loadout;
+  const vitals = sanitizeVitals(raw.vitals);
+  // Save antigo não tem vida guardada: o herói volta com a vida cheia.
+  return vitals ? { ...character, vitals } : character;
 }
 
 function sanitizeQuest(raw: unknown): Quest | null {

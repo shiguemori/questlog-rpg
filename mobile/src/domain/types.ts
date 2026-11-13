@@ -26,6 +26,13 @@ export interface Attributes {
 
 export type AttributeKey = keyof Attributes;
 
+/** Vida guardada depois de uma luta. Ausente = vida cheia. */
+export interface HeroVitals {
+  hp: number;
+  /** ISO 8601 do fim da última luta. A vida recupera a partir daqui. */
+  updatedAt: string;
+}
+
 export interface Character {
   name: string;
   characterClass: CharacterClass;
@@ -34,6 +41,12 @@ export interface Character {
   maxXp: number;
   attributes: Attributes;
   attributePoints: number;
+  /** Vida entre as batalhas (ver `vitals.ts`). */
+  vitals?: HeroVitals;
+  /** Ids dos talentos aprendidos (ver `talents.ts`). Ausente = nenhum. */
+  talents?: string[];
+  /** Ids das habilidades levadas para a luta. Ausente = as iniciais. */
+  loadout?: string[];
 }
 
 export interface UserStats {

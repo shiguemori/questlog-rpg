@@ -4,6 +4,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PressScale } from '../motion/PressScale';
 import { HeroAvatar } from '../components/HeroAvatar';
 import { HeroSheet } from '../components/HeroSheet';
+import { HeroVitalsBar } from '../components/HeroVitalsBar';
 import { QuestCreateModal } from '../components/QuestCreateModal';
 import { QuestRow } from '../components/QuestRow';
 import { WeekStrip } from '../components/WeekStrip';
@@ -31,6 +32,7 @@ import type {
   Quest,
 } from '../domain/types';
 import { colors } from '../theme/colors';
+import { radius, space } from '../theme/spacing';
 
 interface QuestLogScreenProps {
   state: AppState;
@@ -43,6 +45,7 @@ interface QuestLogScreenProps {
   onDeleteQuest: (questId: string) => void;
   onClearCompleted: () => void;
   onSpendAttributePoint: (attribute: AttributeKey) => void;
+  onHeroChange: (change: (current: AppState) => AppState | null) => void;
   onResetJourney: () => void;
   onDismissFeedback: () => void;
   onDismissStorageNotice: () => void;
@@ -78,6 +81,7 @@ export function QuestLogScreen({
   onDeleteQuest,
   onClearCompleted,
   onSpendAttributePoint,
+  onHeroChange,
   onResetJourney,
   onDismissFeedback,
   onDismissStorageNotice,
@@ -157,6 +161,21 @@ export function QuestLogScreen({
 
   const listHeader = (
     <View>
+      <View style={styles.habitBlock}>
+        <Text style={styles.habitCue} testID="habit-cue">
+          {cue.message}
+        </Text>
+        <WeekStrip days={stats.completionDays} today={today} />
+        <Text style={styles.rankHint} testID="next-rank">
+          {nextRankHint(character.level)}
+        </Text>
+        {daily.limitReached ? (
+          <Text style={styles.limitNote}>
+            Limite diário atingido. Quests concluídas hoje não rendem mais XP. Volte amanhã.
+          </Text>
+        ) : null}
+      </View>
+
       <View style={styles.quickBlock}>
         <Text style={[styles.label, styles.padded]}>Atividades rápidas</Text>
         <ScrollView
@@ -308,11 +327,6 @@ export function QuestLogScreen({
 
   return (
     <View style={[styles.screen, { paddingTop: insets.top }]}>
-      <View style={styles.atmosphere} pointerEvents="none">
-        <View style={styles.glowOrb} />
-        <View style={styles.glowOrbSoft} />
-      </View>
-
       <View style={styles.heroBlock}>
         <Text style={styles.brand}>QuestLog</Text>
         <Pressable
@@ -344,10 +358,10 @@ export function QuestLogScreen({
           </View>
         </Pressable>
 
-        <XpBar xp={character.xp} maxXp={character.maxXp} level={character.level} />
-        <Text style={styles.rankHint} testID="next-rank">
-          {nextRankHint(character.level)}
-        </Text>
+        <View style={styles.meters}>
+          <XpBar xp={character.xp} maxXp={character.maxXp} level={character.level} />
+          <HeroVitalsBar character={character} />
+        </View>
 
         <View style={styles.statRow}>
           <Text style={styles.statChip}>Streak {stats.streak}d</Text>
@@ -365,15 +379,6 @@ export function QuestLogScreen({
             XP hoje {daily.xpQuestsToday}/{daily.xpQuestsLimit}
           </Text>
         </View>
-        <Text style={styles.habitCue} testID="habit-cue">
-          {cue.message}
-        </Text>
-        <WeekStrip days={stats.completionDays} today={today} />
-        {daily.limitReached ? (
-          <Text style={styles.limitNote}>
-            Limite diário atingido. Quests concluídas hoje não rendem mais XP — volte amanhã.
-          </Text>
-        ) : null}
       </View>
 
       {storageNotice ? (
@@ -473,6 +478,7 @@ export function QuestLogScreen({
         state={state}
         onClose={() => setHeroOpen(false)}
         onSpendAttributePoint={onSpendAttributePoint}
+        onHeroChange={onHeroChange}
         onResetJourney={() => {
           setHeroOpen(false);
           onResetJourney();
@@ -576,36 +582,16 @@ const QuestSections = memo(function QuestSections({
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.bg },
-  atmosphere: {
-    ...StyleSheet.absoluteFill,
-    overflow: 'hidden',
-  },
-  glowOrb: {
-    position: 'absolute',
-    top: -80,
-    right: -40,
-    width: 220,
-    height: 220,
-    borderRadius: 110,
-    backgroundColor: 'rgba(245, 158, 11, 0.12)',
-  },
-  glowOrbSoft: {
-    position: 'absolute',
-    top: 120,
-    left: -90,
-    width: 200,
-    height: 200,
-    borderRadius: 100,
-    backgroundColor: 'rgba(56, 189, 248, 0.06)',
-  },
   heroBlock: {
-    paddingHorizontal: 20,
-    paddingTop: 12,
-    paddingBottom: 14,
+    paddingHorizontal: space.gutter,
+    paddingTop: space.md,
+    paddingBottom: space.lg,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
-    gap: 10,
+    gap: space.lg,
   },
+  meters: { gap: space.md },
+  habitBlock: { paddingHorizontal: space.gutter, paddingTop: space.lg, gap: space.md },
   brand: {
     fontSize: 12,
     fontWeight: '800',
@@ -615,11 +601,11 @@ const styles = StyleSheet.create({
   },
   heroRow: {
     flexDirection: 'row',
-    gap: 14,
+    gap: space.lg,
     alignItems: 'center',
     minHeight: 64,
   },
-  heroCopy: { flex: 1, gap: 2 },
+  heroCopy: { flex: 1, gap: space.xs },
   heroName: {
     fontSize: 22,
     fontWeight: '800',
@@ -639,24 +625,24 @@ const styles = StyleSheet.create({
   profilePillActive: { borderColor: colors.amber, backgroundColor: colors.amberWash },
   profilePillText: { fontSize: 12, fontWeight: '700', color: colors.textMuted },
   profilePillTextActive: { color: colors.amberSoft },
-  statRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  statRow: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },
   statChip: {
     fontSize: 12,
     fontWeight: '700',
     color: colors.textMuted,
     backgroundColor: colors.bgElevated,
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
+    borderRadius: radius.sm,
+    paddingHorizontal: space.md,
+    paddingVertical: 6,
     overflow: 'hidden',
   },
   statChipAlert: { color: colors.amberSoft, backgroundColor: colors.amberWash },
   rankHint: { fontSize: 12, fontWeight: '600', color: colors.textMuted },
-  habitCue: { fontSize: 13, lineHeight: 18, color: colors.text },
+  habitCue: { fontSize: 14, lineHeight: 20, color: colors.text },
   limitNote: { fontSize: 12, lineHeight: 17, color: colors.amberSoft },
   warningBanner: {
-    marginHorizontal: 20,
-    marginTop: 10,
+    marginHorizontal: space.gutter,
+    marginTop: space.md,
     borderRadius: 12,
     backgroundColor: colors.dangerBg,
     paddingHorizontal: 12,
@@ -666,8 +652,8 @@ const styles = StyleSheet.create({
   },
   warningText: { color: colors.dangerText, fontSize: 13, fontWeight: '600', lineHeight: 18 },
   feedbackBanner: {
-    marginHorizontal: 20,
-    marginTop: 10,
+    marginHorizontal: space.gutter,
+    marginTop: space.md,
     borderRadius: 12,
     backgroundColor: colors.amberWash,
     borderWidth: 1,
@@ -679,8 +665,8 @@ const styles = StyleSheet.create({
   },
   feedbackText: { color: colors.amberSoft, fontSize: 13, fontWeight: '600', lineHeight: 18 },
   undoBanner: {
-    marginHorizontal: 20,
-    marginTop: 8,
+    marginHorizontal: space.gutter,
+    marginTop: space.md,
     minHeight: 44,
     borderRadius: 12,
     borderWidth: 1,
@@ -690,12 +676,12 @@ const styles = StyleSheet.create({
   },
   undoText: { fontSize: 14, fontWeight: '800', color: colors.text },
   questList: { flex: 1 },
-  quickBlock: { paddingTop: 14, gap: 8 },
-  filterBlock: { paddingTop: 12, paddingBottom: 4, gap: 8 },
+  quickBlock: { paddingTop: space.xl, gap: space.md },
+  filterBlock: { paddingTop: space.xl, paddingBottom: space.xs, gap: space.md },
   label: { fontSize: 13, fontWeight: '700', color: colors.textMuted },
-  padded: { paddingHorizontal: 20 },
+  padded: { paddingHorizontal: space.gutter },
   errorText: { fontSize: 13, fontWeight: '600', color: colors.danger },
-  chipScroller: { paddingHorizontal: 20, gap: 8, paddingVertical: 2 },
+  chipScroller: { paddingHorizontal: space.gutter, gap: space.sm, paddingVertical: 2 },
   presetChip: {
     minHeight: 56,
     minWidth: 96,
@@ -727,12 +713,12 @@ const styles = StyleSheet.create({
     color: colors.textDim,
     textTransform: 'uppercase',
     letterSpacing: 1.2,
-    marginBottom: 10,
-    marginTop: 14,
-    paddingHorizontal: 20,
+    marginBottom: space.md,
+    marginTop: space.xl,
+    paddingHorizontal: space.gutter,
   },
-  sectionSpaced: { marginTop: 22 },
-  emptyBlock: { paddingHorizontal: 20, gap: 12, alignItems: 'flex-start' },
+  sectionSpaced: { marginTop: space.xxl },
+  emptyBlock: { paddingHorizontal: space.gutter, gap: space.md, alignItems: 'flex-start' },
   empty: { color: colors.textMuted, fontSize: 14, lineHeight: 20 },
   emptyCta: {
     minHeight: 44,
@@ -746,9 +732,9 @@ const styles = StyleSheet.create({
   doneActions: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 8,
-    paddingHorizontal: 20,
-    marginTop: 4,
+    gap: space.sm,
+    paddingHorizontal: space.gutter,
+    marginTop: space.sm,
   },
   ghostBtn: {
     minHeight: 44,

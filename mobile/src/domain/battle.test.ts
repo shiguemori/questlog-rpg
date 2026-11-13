@@ -3,27 +3,32 @@ import { describe, it } from 'node:test';
 import {
   applyEnemyMove,
   applyPlayerMove,
-  battleDamage,
-  chooseEnemyMove,
-  ENEMY_MOVES,
-  ENEMY_SCALE,
-  HERO_MOVES,
+  chooseEnemySkill,
+  enemyIntent,
+  ENEMY_SKILLS,
+  ENERGY_REGEN_PER_TURN,
+  HERO_SKILLS,
   MAX_BATTLE_TURNS,
+  POISON_MAX_STACKS,
+  previewDamage,
+  skillBlock,
   startBattle,
+  type BattleActor,
   type BattleState,
+  type StatusEffect,
 } from './battle';
 import { CLASS_DEFAULTS } from './constants';
-import type { Character, CharacterClass, Difficulty } from './types';
-import { VILLAIN_BY_CATEGORY } from './victory';
+import type { Attributes, Category, Character, CharacterClass, Difficulty } from './types';
 
 function hero(
   characterClass: CharacterClass,
-  attributes = CLASS_DEFAULTS[characterClass].attributes,
+  attributes: Attributes = CLASS_DEFAULTS[characterClass].attributes,
+  level = 1,
 ): Character {
   return {
     name: 'Ana',
     characterClass,
-    level: 1,
+    level,
     xp: 0,
     maxXp: 100,
     attributes: { ...attributes },
@@ -34,311 +39,301 @@ function hero(
 function begin(
   characterClass: CharacterClass = 'WARRIOR',
   difficulty: Difficulty = 'EASY',
-  category: 'HEALTH' | 'STUDY' = 'HEALTH',
+  category: Category = 'HEALTH',
+  extra: { heroHp?: number; seed?: number; attributes?: Attributes; level?: number } = {},
 ): BattleState {
   return startBattle({
-    character: hero(characterClass),
+    character: hero(characterClass, extra.attributes, extra.level),
     category,
     difficulty,
     heroName: 'Ana',
+    heroHp: extra.heroHp,
+    seed: extra.seed ?? 7,
   });
 }
 
-function fight(state: BattleState, moveId: string): BattleState {
-  let current = state;
-  for (
-    let step = 0;
-    step < 20 && (current.phase === 'PLAYER_TURN' || current.phase === 'ENEMY_TURN');
-    step += 1
-  ) {
-    current =
-      current.phase === 'PLAYER_TURN' ? applyPlayerMove(current, moveId) : applyEnemyMove(current);
-  }
-  return current;
+/** Sem sorte: zera crítico e esquiva dos dois lados, para números exatos. */
+function noLuck(state: BattleState): BattleState {
+  return {
+    ...state,
+    hero: { ...state.hero, critChance: 0, dodgeChance: 0 },
+    enemy: { ...state.enemy, critChance: 0, dodgeChance: 0 },
+  };
 }
 
-describe('catálogo de golpes', () => {
-  it('cada classe e cada categoria tem 4 golpes com ids únicos', () => {
-    for (const moves of Object.values(HERO_MOVES)) {
-      assert.equal(moves.length, 4);
-      assert.equal(new Set(moves.map((entry) => entry.id)).size, 4);
-    }
-    for (const moves of Object.values(ENEMY_MOVES)) {
-      assert.equal(moves.length, 4);
-      assert.equal(new Set(moves.map((entry) => entry.id)).size, 4);
-    }
+function withEnemy(state: BattleState, patch: Partial<BattleActor>): BattleState {
+  return { ...state, enemy: { ...state.enemy, ...patch } };
+}
+
+function withHero(state: BattleState, patch: Partial<BattleActor>): BattleState {
+  return { ...state, hero: { ...state.hero, ...patch } };
+}
+
+function status(id: StatusEffect['id'], turns: number, potency = 0, stacks = 1): StatusEffect {
+  return { id, turns, potency, stacks };
+}
+
+describe('catálogo', () => {
+  it('cada classe tem 6 habilidades próprias, com ids únicos entre classes', () => {
+    const all = Object.values(HERO_SKILLS).flat();
+    for (const skills of Object.values(HERO_SKILLS)) assert.equal(skills.length, 6);
+    assert.equal(new Set(all.map((entry) => entry.id)).size, all.length);
+    const names = (cls: CharacterClass) => HERO_SKILLS[cls].map((entry) => entry.name).join(',');
+    assert.notEqual(names('WARRIOR'), names('MAGE'));
+    assert.notEqual(names('MAGE'), names('ROGUE'));
   });
 
-  it('fixa o nome, o efeito e o poder de cada golpe', () => {
-    assert.deepEqual(
-      HERO_MOVES.WARRIOR.map((entry) => [entry.name, entry.effect, entry.power]),
-      [
-        ['Corte', 'DAMAGE', 8],
-        ['Postura', 'GUARD', 50],
-        ['Investida', 'DAMAGE', 14],
-        ['Fôlego', 'HEAL', 10],
-      ],
-    );
-    assert.deepEqual(
-      HERO_MOVES.MAGE.map((entry) => [entry.name, entry.effect, entry.power]),
-      [
-        ['Faísca', 'DAMAGE', 7],
-        ['Barreira', 'GUARD', 55],
-        ['Rajada', 'DAMAGE', 15],
-        ['Cura', 'HEAL', 9],
-      ],
-    );
-    assert.deepEqual(
-      HERO_MOVES.ROGUE.map((entry) => [entry.name, entry.effect, entry.power]),
-      [
-        ['Punhalada', 'DAMAGE', 9],
-        ['Esquiva', 'GUARD', 45],
-        ['Golpe baixo', 'DAMAGE', 13],
-        ['Trago', 'HEAL', 7],
-      ],
-    );
-    assert.deepEqual(
-      ENEMY_MOVES.STUDY.map((entry) => [entry.name, entry.effect, entry.power]),
-      [
-        ['Notificação', 'DAMAGE', 6],
-        ['Aba nova', 'DAMAGE', 10],
-        ['Rolagem', 'GUARD', 30],
-        ['Cochilo', 'HEAL', 6],
-      ],
-    );
-    assert.deepEqual(
-      ENEMY_MOVES.WORK.map((entry) => [entry.name, entry.effect, entry.power]),
-      [
-        ['Urgência', 'DAMAGE', 7],
-        ['Reunião', 'DAMAGE', 11],
-        ['Protocolo', 'GUARD', 35],
-        ['Café', 'HEAL', 6],
-      ],
-    );
-    assert.deepEqual(
-      ENEMY_MOVES.HEALTH.map((entry) => [entry.name, entry.effect, entry.power]),
-      [
-        ['Adiar', 'DAMAGE', 5],
-        ['Sofá', 'DAMAGE', 10],
-        ['Desculpa', 'GUARD', 40],
-        ['Soneca', 'HEAL', 8],
-      ],
-    );
-    assert.deepEqual(
-      ENEMY_MOVES.HOME.map((entry) => [entry.name, entry.effect, entry.power]),
-      [
-        ['Pilha', 'DAMAGE', 6],
-        ['Entulho', 'DAMAGE', 11],
-        ['Empurrar', 'GUARD', 30],
-        ['Recolher', 'HEAL', 5],
-      ],
-    );
-    assert.deepEqual(
-      ENEMY_MOVES.OTHER.map((entry) => [entry.name, entry.effect, entry.power]),
-      [
-        ['Sussurro', 'DAMAGE', 6],
-        ['Garra', 'DAMAGE', 11],
-        ['Névoa', 'GUARD', 35],
-        ['Reforma', 'HEAL', 6],
-      ],
-    );
+  it('cada classe escala pelo próprio atributo', () => {
+    assert.equal(HERO_SKILLS.WARRIOR[0].scaling, 'strength');
+    assert.equal(HERO_SKILLS.MAGE[0].scaling, 'intelligence');
+    assert.equal(HERO_SKILLS.ROGUE[0].scaling, 'agility');
+  });
+
+  it('cada categoria tem um monstro com 4 golpes próprios', () => {
+    const all = Object.values(ENEMY_SKILLS).flat();
+    for (const skills of Object.values(ENEMY_SKILLS)) assert.equal(skills.length, 4);
+    assert.equal(new Set(all.map((entry) => entry.id)).size, all.length);
+  });
+
+  it('o monstro muda com a categoria da quest', () => {
+    assert.equal(begin('MAGE', 'EASY', 'STUDY').enemy.assetKey, 'enemy.study');
+    assert.equal(begin('MAGE', 'EASY', 'WORK').enemy.assetKey, 'enemy.work');
+    assert.equal(begin('MAGE', 'EASY', 'HOME').enemy.name, 'Bagunça');
   });
 });
 
-describe('startBattle', () => {
-  it('monta herói e monstro com HP, asset e o vilão da categoria', () => {
-    const battle = begin();
-    assert.equal(battle.phase, 'PLAYER_TURN');
-    assert.equal(battle.turn, 0);
-    assert.equal(battle.hero.name, 'Ana');
-    assert.equal(battle.hero.subtitle, 'Guerreiro');
-    assert.equal(battle.hero.assetKey, 'hero.warrior');
-    assert.equal(battle.hero.maxHp, 24 + 4 * 6);
-    assert.equal(battle.hero.hp, battle.hero.maxHp);
-    assert.equal(battle.hero.attack, 5);
-    assert.equal(battle.hero.defense, 2);
-    assert.equal(battle.hero.moves.length, 4);
-    assert.equal(battle.enemy.name, 'Preguiça');
-    assert.equal(battle.enemy.assetKey, 'enemy.health');
-    assert.equal(battle.enemy.maxHp, ENEMY_SCALE.EASY.hp);
-    assert.equal(battle.enemy.attack, ENEMY_SCALE.EASY.attack);
-    assert.equal(battle.victoryTitle, VILLAIN_BY_CATEGORY.HEALTH.defeatedTitle);
-    assert.equal(battle.log[0]?.text, 'Preguiça apareceu!');
+describe('atributos afetam a luta', () => {
+  it('vitalidade dá vida e defesa; inteligência dá energia; agilidade dá crítico', () => {
+    const warrior = begin('WARRIOR');
+    assert.equal(warrior.hero.maxHp, 24 + 4 * 6);
+    assert.equal(warrior.hero.defense, 2);
+    assert.equal(warrior.hero.maxEnergy, 12 + 1 * 2);
+    assert.equal(begin('MAGE').hero.maxEnergy, 12 + 5 * 2);
+    assert.ok(begin('ROGUE').hero.critChance > begin('WARRIOR').hero.critChance);
   });
 
-  it('usa o atributo de ataque da classe e a vitalidade no HP', () => {
-    const warrior = begin();
-    const stronger = startBattle({
-      character: hero('WARRIOR', {
-        ...CLASS_DEFAULTS.WARRIOR.attributes,
-        strength: 8,
-        vitality: 6,
-      }),
-      category: 'HEALTH',
-      difficulty: 'EASY',
-      heroName: 'Ana',
+  it('mais Força, mais dano no Golpe do guerreiro', () => {
+    const base = begin('WARRIOR');
+    const strong = begin('WARRIOR', 'EASY', 'HEALTH', {
+      attributes: { ...CLASS_DEFAULTS.WARRIOR.attributes, strength: 9 },
     });
-    assert.equal(stronger.hero.attack, warrior.hero.attack + 3);
-    assert.equal(stronger.hero.maxHp, 24 + 6 * 6);
-    assert.equal(stronger.hero.defense, 3);
-
-    const mage = startBattle({
-      character: hero('MAGE', { ...CLASS_DEFAULTS.MAGE.attributes, strength: 9 }),
-      category: 'STUDY',
-      difficulty: 'MEDIUM',
-      heroName: 'Ana',
-    });
-    assert.equal(mage.hero.attack, CLASS_DEFAULTS.MAGE.attributes.intelligence);
-    assert.equal(mage.hero.assetKey, 'hero.mage');
-    assert.equal(mage.enemy.name, 'Distração');
-    assert.equal(mage.enemy.maxHp, ENEMY_SCALE.MEDIUM.hp);
+    const strike = HERO_SKILLS.WARRIOR[0];
+    assert.ok(
+      previewDamage(strong.hero, strong.enemy, strike) >
+        previewDamage(base.hero, base.enemy, strike),
+    );
   });
 
-  it('nome vazio vira Herói', () => {
-    const battle = startBattle({
-      character: hero('ROGUE'),
-      category: 'OTHER',
-      difficulty: 'HARD',
-      heroName: '   ',
-    });
-    assert.equal(battle.hero.name, 'Herói');
-    assert.equal(battle.hero.assetKey, 'hero.rogue');
-    assert.equal(battle.enemy.name, 'Sombra');
-    assert.equal(battle.enemy.maxHp, ENEMY_SCALE.HARD.hp);
+  it('o escudo da Muralha cresce com Vitalidade', () => {
+    const after = applyPlayerMove(noLuck(begin('WARRIOR')), 'warrior.wall');
+    assert.equal(after.hero.shield, Math.floor(6 + 4 * 2.5));
   });
 
-  it('não muta o estado de origem ao aplicar um golpe', () => {
-    const battle = begin();
-    const snapshot = JSON.stringify(battle);
-    applyPlayerMove(battle, 'warrior.charge');
-    assert.equal(JSON.stringify(battle), snapshot);
+  it('o monstro sobe de vida e atributos com o nível do herói', () => {
+    const low = begin('MAGE', 'MEDIUM', 'STUDY', { level: 1 });
+    const high = begin('MAGE', 'MEDIUM', 'STUDY', { level: 5 });
+    assert.ok(high.enemy.maxHp > low.enemy.maxHp);
+    assert.ok(high.enemy.attributes.strength > low.enemy.attributes.strength);
   });
 });
 
-describe('turnos', () => {
-  it('golpe do herói causa dano e passa a vez', () => {
-    const battle = begin();
-    const after = applyPlayerMove(battle, 'warrior.charge');
-    assert.equal(after.enemy.hp, 30 - 19);
+describe('energia e recarga', () => {
+  it('habilidade custa energia e entra em recarga', () => {
+    const state = noLuck(begin('WARRIOR'));
+    const after = applyPlayerMove(state, 'warrior.bash');
+    assert.equal(after.hero.energy, state.hero.energy - 5);
+    // A recarga anda 1 no fim do turno do herói.
+    assert.equal(after.hero.cooldowns['warrior.bash'], 2);
+    const again: BattleState = { ...after, phase: 'PLAYER_TURN' };
+    assert.equal(skillBlock(again.hero, HERO_SKILLS.WARRIOR[1]), 'COOLDOWN');
+    assert.equal(applyPlayerMove(again, 'warrior.bash'), again);
+  });
+
+  it('sem energia a habilidade não sai', () => {
+    const state = withHero(noLuck(begin('MAGE')), { energy: 2 });
+    assert.equal(skillBlock(state.hero, HERO_SKILLS.MAGE[1]), 'ENERGY');
+    assert.equal(applyPlayerMove(state, 'mage.fireball'), state);
+  });
+
+  it('o herói recupera energia a cada turno e Defender devolve mais', () => {
+    const state = withHero(noLuck(begin('MAGE')), { energy: 5 });
+    const defended = applyPlayerMove(state, 'mage.defend');
+    assert.equal(defended.hero.energy, 8);
+    const back = applyEnemyMove(defended);
+    assert.equal(back.hero.energy, Math.min(back.hero.maxEnergy, 8 + ENERGY_REGEN_PER_TURN));
+  });
+});
+
+describe('status', () => {
+  it('queimadura tira vida no começo do turno do monstro', () => {
+    const after = applyPlayerMove(noLuck(begin('MAGE', 'EASY', 'WORK')), 'mage.fireball');
+    assert.ok(after.enemy.statuses.some((entry) => entry.id === 'BURN'));
+    const ticked = applyEnemyMove(after);
+    assert.ok(
+      ticked.events.some(
+        (event) => event.kind === 'TICK' && event.target === 'ENEMY' && event.status === 'BURN',
+      ),
+    );
+  });
+
+  it('veneno acumula doses até o teto', () => {
+    let state = withHero(noLuck(begin('ROGUE', 'HARD', 'HOME')), { energy: 99, maxEnergy: 99 });
+    for (let index = 0; index < 5; index += 1) {
+      state = applyPlayerMove({ ...state, phase: 'PLAYER_TURN' }, 'rogue.venom');
+    }
+    const poison = state.enemy.statuses.find((entry) => entry.id === 'POISON');
+    assert.equal(poison?.stacks, POISON_MAX_STACKS);
+  });
+
+  it('atordoar faz o monstro perder a vez', () => {
+    const bashed = applyPlayerMove(noLuck(begin('WARRIOR', 'HARD', 'WORK')), 'warrior.bash');
+    const skipped = applyEnemyMove(bashed);
+    assert.ok(skipped.events.some((event) => event.kind === 'SKIP' && event.target === 'ENEMY'));
+    assert.equal(skipped.hero.hp, bashed.hero.hp);
+    assert.equal(skipped.phase, 'PLAYER_TURN');
+  });
+
+  it('herói atordoado perde a vez e o monstro age de novo', () => {
+    const state = withHero(
+      { ...noLuck(begin('MAGE', 'EASY', 'WORK')), phase: 'ENEMY_TURN' },
+      { statuses: [status('STUN', 1)] },
+    );
+    const after = applyEnemyMove(state);
     assert.equal(after.phase, 'ENEMY_TURN');
-    assert.equal(after.turn, 1);
-    assert.equal(after.lastPlayerMoveId, 'warrior.charge');
-    assert.equal(after.log.at(-1)?.text, 'Preguiça perde 19 de HP.');
-    assert.equal(battle.enemy.hp, 30);
+    assert.equal(after.turn, state.turn + 1);
+    assert.ok(after.events.some((event) => event.kind === 'SKIP' && event.target === 'PLAYER'));
   });
 
-  it('força a mais aumenta o dano na mesma proporção', () => {
-    const base = applyPlayerMove(begin(), 'warrior.charge');
-    const stronger = applyPlayerMove(
-      startBattle({
-        character: hero('WARRIOR', { ...CLASS_DEFAULTS.WARRIOR.attributes, strength: 8 }),
-        category: 'HEALTH',
-        difficulty: 'EASY',
-        heroName: 'Ana',
-      }),
-      'warrior.charge',
+  it('fúria aumenta e fraqueza reduz o dano', () => {
+    const state = noLuck(begin('WARRIOR'));
+    const strike = HERO_SKILLS.WARRIOR[0];
+    const plain = previewDamage(state.hero, state.enemy, strike);
+    const angry = withHero(state, { statuses: [status('EMPOWER', 2, 40)] });
+    const weak = withHero(state, { statuses: [status('WEAKEN', 2, 30)] });
+    assert.ok(previewDamage(angry.hero, angry.enemy, strike) > plain);
+    assert.ok(previewDamage(weak.hero, weak.enemy, strike) < plain);
+  });
+
+  it('esquiva faz o próximo golpe errar e some', () => {
+    const state = withEnemy(noLuck(begin('WARRIOR')), { statuses: [status('EVADE', 1)] });
+    const after = applyPlayerMove(state, 'warrior.strike');
+    assert.equal(after.enemy.hp, state.enemy.hp);
+    assert.ok(after.events.some((event) => event.kind === 'MISS'));
+    assert.ok(!after.enemy.statuses.some((entry) => entry.id === 'EVADE'));
+  });
+
+  it('guarda corta o golpe pela metade e escudo absorve antes da vida', () => {
+    const state = noLuck(begin('WARRIOR', 'HARD'));
+    const plain = applyPlayerMove(state, 'warrior.strike');
+    const guarded = applyPlayerMove(
+      withEnemy(state, { statuses: [status('GUARD', 1, 50)] }),
+      'warrior.strike',
     );
-    assert.equal(base.enemy.hp - stronger.enemy.hp, 3);
+    assert.ok(state.enemy.hp - guarded.enemy.hp < state.enemy.hp - plain.enemy.hp);
+
+    const shielded = applyPlayerMove(withEnemy(state, { shield: 100 }), 'warrior.strike');
+    assert.equal(shielded.enemy.hp, state.enemy.hp);
+    assert.ok(shielded.enemy.shield < 100);
+  });
+});
+
+describe('bônus condicionais', () => {
+  it('Execução dobra o dano com o monstro em vida baixa', () => {
+    const state = noLuck(begin('WARRIOR', 'HARD'));
+    const execute = HERO_SKILLS.WARRIOR[4];
+    const full = previewDamage(state.hero, state.enemy, execute);
+    const low = withEnemy(state, { hp: 5 });
+    assert.ok(previewDamage(low.hero, low.enemy, execute) > full * 1.5);
   });
 
-  it('ignora golpe desconhecido e fase errada', () => {
-    const battle = begin();
-    assert.equal(applyPlayerMove(battle, 'nope'), battle);
-    const enemyPhase = applyPlayerMove(battle, 'warrior.slash');
-    assert.equal(applyPlayerMove(enemyPhase, 'warrior.slash'), enemyPhase);
-    assert.equal(applyEnemyMove(battle), battle);
-  });
-
-  it('guarda reduz o próximo golpe e depois some', () => {
-    const guarded = applyPlayerMove(begin(), 'warrior.guard');
-    assert.equal(guarded.hero.guard, 50);
-    assert.equal(guarded.log.at(-1)?.text, 'O próximo golpe vai doer menos.');
-    const hit = applyEnemyMove(guarded);
-    assert.equal(hit.hero.hp, 48 - 1);
-    assert.equal(hit.hero.guard, 0);
-    assert.equal(hit.phase, 'PLAYER_TURN');
-    assert.equal(hit.lastEnemyMoveId, 'health.delay');
-  });
-
-  it('cura não passa do máximo e anuncia HP cheio', () => {
-    const healed = applyPlayerMove(begin(), 'warrior.breath');
-    assert.equal(healed.hero.hp, healed.hero.maxHp);
-    assert.equal(healed.log.at(-1)?.text, 'Ana já está com HP cheio.');
-
-    const hurt = applyEnemyMove(applyPlayerMove(begin(), 'warrior.slash'));
-    const recovered = applyPlayerMove(hurt, 'warrior.breath');
-    assert.equal(recovered.hero.hp, Math.min(hurt.hero.maxHp, hurt.hero.hp + 12));
-    assert.match(recovered.log.at(-1)?.text ?? '', /recupera/);
-  });
-
-  it('monstro difícil tira mais HP no mesmo golpe', () => {
-    const exchange = (difficulty: Difficulty) => {
-      const started = startBattle({
-        character: hero('WARRIOR'),
-        category: 'HEALTH',
-        difficulty,
-        heroName: 'Ana',
-      });
-      return applyEnemyMove(applyPlayerMove(started, 'warrior.charge')).hero.hp;
-    };
-    assert.ok(exchange('HARD') < exchange('MEDIUM'));
-    assert.ok(exchange('MEDIUM') < exchange('EASY'));
-  });
-
-  it('golpe que zera o HP vence sem o monstro agir', () => {
-    const won = fight(begin('MAGE', 'MEDIUM', 'STUDY'), 'mage.burst');
-    assert.equal(won.phase, 'VICTORY');
-    assert.equal(won.enemy.hp, 0);
-    assert.equal(won.enemyTurns, 2);
-    assert.equal(won.log.at(-1)?.text, 'Distração derrotada!');
-  });
-
-  it('golpe fraco contra quest difícil derruba o herói', () => {
-    const lost = fight(begin('ROGUE', 'HARD', 'HEALTH'), 'rogue.stab');
-    assert.equal(lost.phase, 'DEFEAT');
-    assert.equal(lost.hero.hp, 0);
-    assert.equal(lost.log.at(-1)?.text, 'Ana caiu.');
-  });
-
-  it('só curar até o teto de turnos é derrota com o herói ainda de pé', () => {
-    const stalled = fight(begin(), 'warrior.breath');
-    assert.equal(stalled.phase, 'DEFEAT');
-    assert.equal(stalled.turn, MAX_BATTLE_TURNS);
-    assert.ok(stalled.hero.hp > 0);
-    assert.equal(stalled.log.at(-1)?.text, 'Ana não aguenta mais.');
-  });
-
-  it('monstro cheio não cura e guarda ativa não se repete', () => {
-    const battle = begin();
-    const full = { ...battle.enemy, hp: battle.enemy.maxHp };
-    assert.equal(chooseEnemyMove(full, 3).id, 'health.delay');
-
-    const guarding = { ...battle.enemy, hp: 10, guard: 40 };
-    assert.equal(chooseEnemyMove(guarding, 2).id, 'health.snooze');
-  });
-
-  it('monstro sem golpe útil usa o primeiro mesmo assim', () => {
-    const battle = begin();
-    const heal = battle.enemy.moves[3];
-    assert.ok(heal);
-    const onlyHeal = {
-      ...battle,
-      phase: 'ENEMY_TURN' as const,
-      enemy: { ...battle.enemy, moves: [heal] },
-    };
-    const after = applyEnemyMove(onlyHeal);
-    assert.equal(after.phase, 'PLAYER_TURN');
-    assert.equal(after.lastEnemyMoveId, heal.id);
-    assert.match(after.log.at(-1)?.text ?? '', /cheio/);
-  });
-
-  it('dano mínimo é 1 mesmo com defesa alta', () => {
-    assert.equal(battleDamage(1, 0, 0, 99), 1);
-    const battle = begin();
-    const tank = applyEnemyMove({
-      ...applyPlayerMove(battle, 'warrior.guard'),
-      hero: { ...battle.hero, defense: 99, guard: 0 },
+  it('Golpe nas Costas é sempre crítico em alvo envenenado', () => {
+    const state = withEnemy(noLuck(begin('ROGUE', 'HARD')), {
+      statuses: [status('POISON', 3, 2)],
     });
-    assert.equal(tank.hero.hp, battle.hero.maxHp - 1);
+    const after = applyPlayerMove(state, 'rogue.backstab');
+    assert.ok(after.events.some((event) => event.kind === 'DAMAGE' && event.crit === true));
+  });
+});
+
+describe('fluxo da luta', () => {
+  it('o monstro mostra o próximo golpe e usa o que mostrou', () => {
+    const state = noLuck(begin('WARRIOR', 'MEDIUM', 'HOME'));
+    const intent = enemyIntent(state);
+    assert.ok(intent);
+    const after = applyEnemyMove(applyPlayerMove(state, 'warrior.defend'));
+    assert.equal(after.lastEnemyMoveId, intent.id);
+    assert.ok(enemyIntent(after));
+  });
+
+  it('a mesma semente gera a mesma luta', () => {
+    const play = (seed: number) => {
+      let state = begin('ROGUE', 'MEDIUM', 'OTHER', { seed });
+      for (let step = 0; step < 6; step += 1) {
+        state =
+          state.phase === 'PLAYER_TURN'
+            ? applyPlayerMove(state, 'rogue.stab')
+            : applyEnemyMove(state);
+      }
+      return JSON.stringify([state.hero.hp, state.enemy.hp, state.rng]);
+    };
+    assert.equal(play(42), play(42));
+  });
+
+  it('entra com a vida guardada, limitada à vida máxima', () => {
+    assert.equal(begin('WARRIOR', 'EASY', 'HEALTH', { heroHp: 10 }).hero.hp, 10);
+    assert.equal(begin('WARRIOR', 'EASY', 'HEALTH', { heroHp: 999 }).hero.hp, 48);
+  });
+
+  it(`passar de ${MAX_BATTLE_TURNS} turnos do herói é derrota`, () => {
+    let state = withEnemy(noLuck(begin('MAGE', 'HARD', 'HEALTH')), { hp: 9999, maxHp: 9999 });
+    state = withHero(state, { hp: 9999, maxHp: 9999 });
+    for (let step = 0; step < 60 && state.phase !== 'DEFEAT'; step += 1) {
+      state =
+        state.phase === 'PLAYER_TURN'
+          ? applyPlayerMove(state, 'mage.defend')
+          : applyEnemyMove(state);
+    }
+    assert.equal(state.phase, 'DEFEAT');
+    assert.equal(state.turn, MAX_BATTLE_TURNS);
+  });
+
+  it('nocaute do monstro vira vitória com evento KO', () => {
+    const after = applyPlayerMove(withEnemy(noLuck(begin('WARRIOR')), { hp: 1 }), 'warrior.strike');
+    assert.equal(after.phase, 'VICTORY');
+    assert.ok(after.events.some((event) => event.kind === 'KO' && event.target === 'ENEMY'));
+  });
+
+  it('monstro ferido prefere se curar', () => {
+    const state = withEnemy(begin('MAGE', 'MEDIUM', 'STUDY'), { hp: 5 });
+    assert.equal(chooseEnemySkill(state).id, 'study.nap');
+  });
+
+  it('com estratégia, toda classe vence o monstro fácil de cada categoria', () => {
+    const plan: Record<CharacterClass, string[]> = {
+      WARRIOR: ['warrior.execute', 'warrior.warcry', 'warrior.strike'],
+      MAGE: ['mage.fireball', 'mage.meteor', 'mage.spark'],
+      ROGUE: ['rogue.venom', 'rogue.backstab', 'rogue.stab'],
+    };
+    for (const cls of Object.keys(plan) as CharacterClass[]) {
+      for (const category of Object.keys(ENEMY_SKILLS) as Category[]) {
+        let state = begin(cls, 'EASY', category, { seed: 3 });
+        for (let step = 0; step < 60; step += 1) {
+          if (state.phase === 'ENEMY_TURN') {
+            state = applyEnemyMove(state);
+          } else if (state.phase === 'PLAYER_TURN') {
+            const current = state;
+            const pick =
+              plan[cls].find((id) => {
+                const entry = current.hero.skills.find((item) => item.id === id);
+                return entry != null && skillBlock(current.hero, entry) == null;
+              }) ?? plan[cls][plan[cls].length - 1];
+            state = applyPlayerMove(state, pick);
+          } else {
+            break;
+          }
+        }
+        assert.equal(state.phase, 'VICTORY', `${cls} contra ${category}`);
+      }
+    }
   });
 });

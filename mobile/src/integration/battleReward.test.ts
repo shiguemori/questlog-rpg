@@ -1,7 +1,13 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { MAX_XP_QUESTS_PER_DAY } from '../domain/antiFarm';
-import { applyEnemyMove, applyPlayerMove, startBattle, type BattleState } from '../domain/battle';
+import {
+  applyEnemyMove,
+  applyPlayerMove,
+  skillBlock,
+  startBattle,
+  type BattleState,
+} from '../domain/battle';
 import { completeQuest, planQuestCompletion } from '../domain/completeQuest';
 import { localIsoDate } from '../domain/dates';
 import { addQuest } from '../domain/quests';
@@ -14,15 +20,25 @@ function at(day: number, hour: number, minute = 0): Date {
   return new Date(2026, 10, day, hour, minute, 0, 0);
 }
 
-function fight(state: BattleState, moveId: string): BattleState {
+/** Usa o primeiro golpe da lista que estiver liberado (energia e recarga). */
+function fight(state: BattleState, preferred: readonly string[]): BattleState {
   let current = state;
   for (
     let step = 0;
-    step < 20 && (current.phase === 'PLAYER_TURN' || current.phase === 'ENEMY_TURN');
+    step < 80 && (current.phase === 'PLAYER_TURN' || current.phase === 'ENEMY_TURN');
     step += 1
   ) {
-    current =
-      current.phase === 'PLAYER_TURN' ? applyPlayerMove(current, moveId) : applyEnemyMove(current);
+    if (current.phase === 'ENEMY_TURN') {
+      current = applyEnemyMove(current);
+      continue;
+    }
+    const hero = current.hero;
+    const pick =
+      preferred.find((id) => {
+        const entry = hero.skills.find((item) => item.id === id);
+        return entry != null && skillBlock(hero, entry) == null;
+      }) ?? preferred[preferred.length - 1];
+    current = applyPlayerMove(current, pick);
   }
   return current;
 }
@@ -53,7 +69,7 @@ describe('completeQuest → batalha → recompensa', () => {
         difficulty: 'MEDIUM',
         heroName: added.state.character.name,
       }),
-      'mage.burst',
+      ['mage.meteor', 'mage.fireball', 'mage.spark'],
     );
     assert.equal(battle.phase, 'VICTORY');
 
@@ -92,7 +108,7 @@ describe('completeQuest → batalha → recompensa', () => {
         difficulty: 'MEDIUM',
         heroName: 'Ana',
       }),
-      'mage.heal',
+      ['mage.defend'],
     );
     assert.equal(battle.phase, 'DEFEAT');
 
