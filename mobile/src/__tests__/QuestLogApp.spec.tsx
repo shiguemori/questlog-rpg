@@ -1,12 +1,25 @@
 /* eslint-disable import/first, @typescript-eslint/no-require-imports */
 jest.mock('react-native-reanimated', () => {
-  const { View } = require('react-native');
+  const { Text, View } = require('react-native');
+  const easing = () => (value: number) => value;
   return {
     __esModule: true,
-    default: { View },
+    default: { View, Text },
+    Easing: {
+      in: easing,
+      out: easing,
+      inOut: easing,
+      quad: easing(),
+      cubic: easing(),
+      sin: easing(),
+    },
     useSharedValue: (value: unknown) => ({ value }),
     useAnimatedStyle: (updater: () => object) => updater(),
     withTiming: (value: unknown) => value,
+    withDelay: (_delay: number, value: unknown) => value,
+    withSequence: (...values: unknown[]) => values[values.length - 1],
+    withRepeat: (value: unknown) => value,
+    cancelAnimation: () => undefined,
   };
 });
 
@@ -62,15 +75,24 @@ async function advance(ms: number) {
   });
 }
 
-/** Golpeia até a tela de resultado. O monstro age no timer de 450 ms. */
-async function fightWith(moveLabel: string) {
-  for (let step = 0; step < 8; step += 1) {
+/**
+ * Luta até a tela de resultado usando o primeiro golpe liberado da lista
+ * (energia e recarga). O monstro age no timer de 1 s.
+ */
+async function fightWith(...labels: string[]) {
+  for (let step = 0; step < 16; step += 1) {
     if (screen.queryByLabelText('Fechar batalha')) return;
-    await fireEvent.press(screen.getByLabelText(moveLabel));
-    await advance(500);
+    const ready = labels.find(
+      (label) => screen.getByLabelText(label).props.accessibilityState?.disabled !== true,
+    );
+    await fireEvent.press(screen.getByLabelText(ready ?? labels[labels.length - 1]));
+    await advance(1200);
   }
   expect(screen.getByLabelText('Fechar batalha')).toBeTruthy();
 }
+
+const MAGE_PLAN = ['Usar Lista Riscada', 'Usar Café Fervendo', 'Usar Post-it'];
+const WARRIOR_PLAN = ['Usar Faxina Final', 'Usar Playlist Animada', 'Usar Vassourada'];
 
 /** Percentual preenchido da barra de XP do cabeçalho (0–100). */
 function xpFillPercent(): number {
@@ -139,7 +161,7 @@ describe('QuestLogApp — fluxo no aparelho', () => {
 
     await fireEvent.press(screen.getByLabelText('Concluir quest Estudar 25min'));
     expect(alertSpy).not.toHaveBeenCalled();
-    await fightWith('Usar Rajada');
+    await fightWith(...MAGE_PLAN);
     expect(screen.getByText('Distração derrotada!')).toBeTruthy();
 
     await fireEvent.press(screen.getByLabelText('Fechar batalha'));
@@ -214,7 +236,13 @@ describe('QuestLogApp — fluxo no aparelho', () => {
     expect(xpFillPercent()).toBeCloseTo(90, 5);
 
     await fireEvent.press(screen.getByLabelText('Concluir quest Maratona'));
-    await fightWith('Usar Rajada');
+    // O próximo golpe do monstro não aparece; segurar um golpe mostra o texto inteiro.
+    expect(screen.queryByText('Próximo golpe')).toBeNull();
+    await fireEvent(screen.getByLabelText('Usar Post-it'), 'longPress');
+    expect(screen.getByText('Toque para fechar')).toBeTruthy();
+    await fireEvent.press(screen.getByLabelText('Fechar detalhes da habilidade'));
+    expect(screen.queryByText('Toque para fechar')).toBeNull();
+    await fightWith(...MAGE_PLAN);
     expect(screen.getByText('Preguiça derrotada!')).toBeTruthy();
     await fireEvent.press(screen.getByLabelText('Fechar batalha'));
 
@@ -241,6 +269,29 @@ describe('QuestLogApp — fluxo no aparelho', () => {
     expect(persisted.character.level).toBe(2);
     expect(persisted.character.attributes.intelligence).toBe(6);
     expect(persisted.character.attributePoints).toBe(1);
+
+    // Reset devolve o ponto gasto.
+    await fireEvent.press(screen.getByLabelText('Devolver pontos de atributo'));
+    await act(async () => pressAlertButton(alertSpy, 'Devolver'));
+    expect(screen.getByTestId('attribute-intelligence').props.children).toBe(5);
+    expect(screen.getByText('Você tem 2 pontos para distribuir.')).toBeTruthy();
+
+    // Nível 2 dá 1 ponto de talento.
+    await fireEvent.press(screen.getByLabelText('Talentos, 1 para usar'));
+    expect(screen.getByText('1 ponto de talento para usar')).toBeTruthy();
+    await fireEvent.press(screen.getByLabelText('Aprender Mão Firme'));
+    expect(screen.getByText('Sem pontos agora. Cada nível dá mais um.')).toBeTruthy();
+
+    // Loadout: tirar um golpe deixa a luta com 4 + Respirar Fundo.
+    await fireEvent.press(screen.getByLabelText('Golpes'));
+    expect(screen.getByText(/Na luta: 5 de 5/)).toBeTruthy();
+    await fireEvent.press(screen.getByLabelText(/^Modo Avião\./));
+    expect(screen.getByText(/Na luta: 4 de 5/)).toBeTruthy();
+
+    await advance(10);
+    const tuned = await readSave(storage);
+    expect(tuned.character.talents).toEqual(['mage.attack.1']);
+    expect(tuned.character.loadout).not.toContain('mage.frost');
   });
 
   it('excluir quest pede confirmação e remove da lista', async () => {
@@ -294,7 +345,7 @@ describe('QuestLogApp — fluxo no aparelho', () => {
 
     await advance(61_000);
     await fireEvent.press(screen.getByLabelText('Concluir quest Beber água'));
-    await fightWith('Usar Investida');
+    await fightWith(...WARRIOR_PLAN);
     expect(screen.getByText('Meta do dia cumprida. Amanhã basta uma quest.')).toBeTruthy();
     expect(screen.getByText('Preguiça derrotada!')).toBeTruthy();
 
@@ -333,7 +384,7 @@ describe('App — armazenamento nativo ausente (bug P0 do Expo Go)', () => {
     await fireEvent.press(screen.getByLabelText('Adicionar quest Treino, mais 50 de XP'));
     await advance(61_000);
     await fireEvent.press(screen.getByLabelText('Concluir quest Treino'));
-    await fightWith('Usar Rajada');
+    await fightWith(...MAGE_PLAN);
     await fireEvent.press(screen.getByLabelText('Fechar batalha'));
     await advance(1000);
     expect(screen.getByText('50/100 XP')).toBeTruthy();

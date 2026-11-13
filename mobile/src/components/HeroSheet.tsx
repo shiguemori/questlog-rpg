@@ -11,13 +11,28 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import appConfig from '../../app.json';
+import {
+  CLASS_OFFENSE,
+  critChanceFor,
+  defenseFor,
+  dodgeChanceFor,
+  heroMaxEnergy,
+  heroMaxHp,
+} from '../domain/battle';
 import { ATTRIBUTE_KEYS, ATTRIBUTE_LABELS, CLASS_DEFAULTS } from '../domain/constants';
 import { streakTitle } from '../domain/engagement';
-import { ACHIEVEMENTS, heroRankForLevel } from '../domain/progression';
+import {
+  ACHIEVEMENTS,
+  heroRankForLevel,
+  resetAttributePoints,
+  spentAttributePoints,
+} from '../domain/progression';
+import { talentPointsLeft } from '../domain/talents';
 import { canArmStreakShield } from '../domain/rewards';
 import { cloudSyncStatus } from '../domain/state';
 import { localIsoDate } from '../domain/dates';
 import type {
+  Attributes,
   AppState,
   AttributeKey,
   CharacterClass,
@@ -26,14 +41,29 @@ import type {
 } from '../domain/types';
 import { useReducedMotion } from '../platform/feedback';
 import { colors } from '../theme/colors';
+import { radius, space } from '../theme/spacing';
 import { HeroAvatar } from './HeroAvatar';
+import { SkillLoadout } from './hero/SkillLoadout';
+import { TalentTree } from './hero/TalentTree';
 import { XpBar } from './XpBar';
+
+type HeroTab = 'ATTRIBUTES' | 'TALENTS' | 'SKILLS' | 'JOURNEY' | 'SETTINGS';
+
+const TABS: readonly { id: HeroTab; label: string }[] = [
+  { id: 'ATTRIBUTES', label: 'Atributos' },
+  { id: 'TALENTS', label: 'Talentos' },
+  { id: 'SKILLS', label: 'Golpes' },
+  { id: 'JOURNEY', label: 'Jornada' },
+  { id: 'SETTINGS', label: 'Ajustes' },
+];
 
 export interface HeroSheetProps {
   visible: boolean;
   state: AppState;
   onClose: () => void;
   onSpendAttributePoint: (attribute: AttributeKey) => void;
+  /** Talentos, loadout e reset de atributos (casos de uso que devolvem null quando não dá). */
+  onHeroChange: (change: (current: AppState) => AppState | null) => void;
   onResetJourney: () => void;
   onRename: (name: string) => string | null;
   onChangeClass: (characterClass: CharacterClass) => void;
@@ -48,11 +78,31 @@ export interface HeroSheetProps {
  * Folha do herói: atributos (gasto de pontos do level up), estatísticas,
  * conquistas e reinício da jornada. Modal nativo — ocasional, sem motion próprio.
  */
+/** O que o atributo faz na batalha, com o valor de agora. */
+function attributeEffect(
+  key: AttributeKey,
+  attributes: Attributes,
+  characterClass: CharacterClass,
+): string {
+  const main = CLASS_OFFENSE[characterClass] === key ? 'Ataque da sua classe. ' : '';
+  switch (key) {
+    case 'strength':
+      return `${main}Dano dos golpes de Força.`;
+    case 'intelligence':
+      return `${main}Energia máxima ${heroMaxEnergy(attributes)}.`;
+    case 'agility':
+      return `${main}Crítico ${critChanceFor(attributes)}% · esquiva ${dodgeChanceFor(attributes)}%.`;
+    default:
+      return `Vida ${heroMaxHp(attributes)} · defesa ${defenseFor(attributes)}.`;
+  }
+}
+
 export function HeroSheet({
   visible,
   state,
   onClose,
   onSpendAttributePoint,
+  onHeroChange,
   onResetJourney,
   onRename,
   onChangeClass,
@@ -73,6 +123,20 @@ export function HeroSheet({
   const points = character.attributePoints;
   const classLabel = CLASS_DEFAULTS[character.characterClass].label;
   const unlockedCount = ACHIEVEMENTS.filter((a) => a.isUnlocked(state)).length;
+  const [tab, setTab] = useState<HeroTab>('ATTRIBUTES');
+  const talentPoints = talentPointsLeft(character);
+  const spent = spentAttributePoints(state);
+
+  const confirmAttributeReset = () => {
+    Alert.alert(
+      'Devolver pontos?',
+      'Os atributos voltam ao início da classe e os pontos voltam para você.',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        { text: 'Devolver', onPress: () => onHeroChange(resetAttributePoints) },
+      ],
+    );
+  };
 
   const confirmReset = () => {
     Alert.alert(
@@ -102,7 +166,7 @@ export function HeroSheet({
       onRequestClose={onClose}
       statusBarTranslucent
     >
-      <View style={[styles.screen, { paddingTop: insets.top + 12 }]}>
+      <View style={[styles.screen, { paddingTop: insets.top + space.md }]}>
         <View style={styles.topBar}>
           <Text style={styles.eyebrow}>Folha do herói</Text>
           <Pressable
@@ -116,14 +180,14 @@ export function HeroSheet({
         </View>
 
         <ScrollView
-          contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 32 }]}
+          contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + space.xxl }]}
           showsVerticalScrollIndicator={false}
         >
           <View style={styles.identity}>
             <HeroAvatar
               characterClass={character.characterClass}
               initial={character.name}
-              size={88}
+              size={64}
             />
             <View style={styles.identityCopy}>
               <Text style={styles.name}>{character.name}</Text>
@@ -134,208 +198,289 @@ export function HeroSheet({
           </View>
           <XpBar xp={character.xp} maxXp={character.maxXp} level={character.level} />
 
-          <Text style={styles.section}>Atributos</Text>
-          <Text style={[styles.hint, points > 0 && styles.hintActive]}>
-            {points > 0
-              ? `Você tem ${points} ${points === 1 ? 'ponto' : 'pontos'} para distribuir.`
-              : 'Suba de nível para ganhar pontos de atributo.'}
-          </Text>
-          <View style={styles.card}>
-            {ATTRIBUTE_KEYS.map((key, index) => (
-              <View key={key} style={[styles.attributeRow, index > 0 && styles.divider]}>
-                <Text style={styles.attributeLabel}>{ATTRIBUTE_LABELS[key]}</Text>
-                <Text style={styles.attributeValue} testID={`attribute-${key}`}>
-                  {character.attributes[key]}
-                </Text>
-                <Pressable
-                  style={({ pressed }) => [
-                    styles.plusBtn,
-                    points <= 0 && styles.plusBtnDisabled,
-                    pressed && styles.pressed,
-                  ]}
-                  disabled={points <= 0}
-                  onPress={() => onSpendAttributePoint(key)}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Aumentar ${ATTRIBUTE_LABELS[key]}`}
-                  accessibilityState={{ disabled: points <= 0 }}
-                >
-                  <Text style={styles.plusBtnText}>+</Text>
-                </Pressable>
-              </View>
-            ))}
-          </View>
-
-          <Text style={styles.section}>Jornada</Text>
-          <View style={styles.statGrid}>
-            {journey.map((entry) => (
-              <View key={entry.label} style={styles.statCard}>
-                <Text style={styles.statValue}>{entry.value}</Text>
-                <Text style={styles.statLabel}>{entry.label}</Text>
-              </View>
-            ))}
-          </View>
-
-          <Text style={styles.section}>
-            Conquistas {unlockedCount}/{ACHIEVEMENTS.length}
-          </Text>
-          <View style={styles.card}>
-            {ACHIEVEMENTS.map((achievement, index) => {
-              const unlocked = achievement.isUnlocked(state);
-              return (
-                <View
-                  key={achievement.id}
-                  style={[styles.achievementRow, index > 0 && styles.divider]}
-                  accessible
-                  accessibilityLabel={`${achievement.title}. ${achievement.description} ${
-                    unlocked ? 'Desbloqueada.' : 'Bloqueada.'
-                  }`}
-                >
-                  <View style={[styles.medal, unlocked && styles.medalUnlocked]} />
-                  <View style={styles.achievementCopy}>
-                    <Text style={[styles.achievementTitle, !unlocked && styles.locked]}>
-                      {achievement.title}
-                    </Text>
-                    <Text style={styles.achievementDescription}>{achievement.description}</Text>
-                  </View>
-                </View>
-              );
-            })}
-          </View>
-
-          <Text style={styles.section}>Hábito</Text>
-          <Text style={styles.hint}>Meta do dia</Text>
-          <View style={styles.choiceRow}>
-            {([1, 2, 3] as DailyGoalTarget[]).map((target) => {
-              const selected = state.settings.dailyGoalTarget === target;
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.tabs}
+            accessibilityRole="tablist"
+          >
+            {TABS.map((entry) => {
+              const selected = tab === entry.id;
+              const count =
+                entry.id === 'ATTRIBUTES' ? points : entry.id === 'TALENTS' ? talentPoints : 0;
               return (
                 <Pressable
-                  key={target}
-                  onPress={() => onPatchSettings({ dailyGoalTarget: target })}
-                  style={[styles.choice, selected && styles.choiceOn]}
-                  accessibilityRole="radio"
+                  key={entry.id}
+                  onPress={() => setTab(entry.id)}
+                  style={[styles.tab, selected && styles.tabOn]}
+                  accessibilityRole="tab"
                   accessibilityState={{ selected }}
-                  accessibilityLabel={`Meta de ${target} ${target === 1 ? 'quest' : 'quests'}`}
+                  accessibilityLabel={
+                    count > 0 ? `${entry.label}, ${count} para usar` : entry.label
+                  }
                 >
-                  <Text style={styles.choiceText}>{target}</Text>
+                  <Text style={[styles.tabText, selected && styles.tabTextOn]}>{entry.label}</Text>
+                  {count > 0 ? <Text style={styles.tabCount}>{count}</Text> : null}
                 </Pressable>
               );
             })}
-          </View>
-          <Text style={styles.hint}>Lembrete local, um horário. Desligar é imediato.</Text>
-          <View style={styles.choiceRow}>
-            {[7, 8, 12, 18, 21].map((hour) => {
-              const selected = state.settings.reminder?.hour === hour;
-              return (
-                <Pressable
-                  key={hour}
-                  onPress={() => onPatchSettings({ reminder: { hour, minute: 0 } })}
-                  style={[styles.choice, selected && styles.choiceOn]}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Lembrete às ${hour} horas`}
-                >
-                  <Text style={styles.choiceText}>{hour}h</Text>
-                </Pressable>
-              );
-            })}
-            <Pressable
-              onPress={() => onPatchSettings({ reminder: null })}
-              style={styles.choice}
-              accessibilityRole="button"
-              accessibilityLabel="Desligar lembrete"
-            >
-              <Text style={styles.choiceText}>Off</Text>
-            </Pressable>
-          </View>
-          <Pressable
-            onPress={() => onPatchSettings({ soundEnabled: !state.settings.soundEnabled })}
-            style={styles.choice}
-            accessibilityRole="switch"
-            accessibilityState={{ checked: state.settings.soundEnabled }}
-          >
-            <Text style={styles.choiceText}>
-              Som de vitória {state.settings.soundEnabled ? 'ligado' : 'desligado'}
-            </Text>
-          </Pressable>
-          <Pressable
-            onPress={onToggleShield}
-            disabled={!shieldReady && !state.settings.streakShieldArmed}
-            style={styles.choice}
-            accessibilityRole="button"
-          >
-            <Text style={styles.choiceText}>
-              {state.settings.streakShieldArmed
-                ? 'Escudo armado'
-                : shieldReady
-                  ? 'Armar escudo do mês'
-                  : 'Escudo deste mês já usado'}
-            </Text>
-          </Pressable>
-          <Text style={styles.hint}>{cloudSyncStatus().message}</Text>
-          <Text style={styles.hint}>Avatar geométrico. O modelo 3D segue congelado.</Text>
-          <Text style={styles.label}>Nome</Text>
-          <TextInput
-            value={nameDraft}
-            onChangeText={setNameDraft}
-            style={styles.input}
-            maxLength={24}
-            accessibilityLabel="Novo nome do herói"
-          />
-          {formError ? <Text style={styles.error}>{formError}</Text> : null}
-          <Pressable
-            style={styles.choice}
-            onPress={() => {
-              const message = onRename(nameDraft);
-              setFormError(message);
-            }}
-            accessibilityRole="button"
-            accessibilityLabel="Salvar nome do herói"
-          >
-            <Text style={styles.choiceText}>Salvar nome</Text>
-          </Pressable>
-          <View style={styles.choiceRow}>
-            {(Object.keys(CLASS_DEFAULTS) as CharacterClass[]).map((key) => (
-              <Pressable
-                key={key}
-                onPress={() => onChangeClass(key)}
-                style={[styles.choice, state.character.characterClass === key && styles.choiceOn]}
-                accessibilityRole="radio"
-                accessibilityState={{ selected: state.character.characterClass === key }}
-              >
-                <Text style={styles.choiceText}>{CLASS_DEFAULTS[key].label}</Text>
-              </Pressable>
-            ))}
-          </View>
-          <Pressable style={styles.choice} onPress={onExportSave} accessibilityRole="button">
-            <Text style={styles.choiceText}>Exportar save</Text>
-          </Pressable>
-          <Pressable style={styles.choice} onPress={onShareWeek} accessibilityRole="button">
-            <Text style={styles.choiceText}>Copiar resumo da semana</Text>
-          </Pressable>
-          <TextInput
-            value={importDraft}
-            onChangeText={setImportDraft}
-            style={styles.input}
-            placeholder="Cole o JSON do save"
-            placeholderTextColor="#64748B"
-            accessibilityLabel="Importar save"
-          />
-          <Pressable
-            style={styles.choice}
-            onPress={() => setFormError(onImportSave(importDraft))}
-            accessibilityRole="button"
-            accessibilityLabel="Importar save colado"
-          >
-            <Text style={styles.choiceText}>Importar</Text>
-          </Pressable>
+          </ScrollView>
 
-          <Pressable
-            style={({ pressed }) => [styles.resetBtn, pressed && styles.pressed]}
-            onPress={confirmReset}
-            accessibilityRole="button"
-            accessibilityLabel="Reiniciar jornada"
-          >
-            <Text style={styles.resetBtnText}>Reiniciar jornada</Text>
-          </Pressable>
+          {tab === 'ATTRIBUTES' ? (
+            <View style={styles.panel}>
+              <Text style={[styles.hint, points > 0 && styles.hintActive]}>
+                {points > 0
+                  ? `Você tem ${points} ${points === 1 ? 'ponto' : 'pontos'} para distribuir.`
+                  : 'Suba de nível para ganhar pontos de atributo.'}
+              </Text>
+              <View style={styles.list}>
+                {ATTRIBUTE_KEYS.map((key) => (
+                  <View key={key} style={styles.attributeRow}>
+                    <View style={styles.attributeCopy}>
+                      <Text style={styles.attributeLabel}>{ATTRIBUTE_LABELS[key]}</Text>
+                      <Text style={styles.attributeEffect}>
+                        {attributeEffect(key, character.attributes, character.characterClass)}
+                      </Text>
+                    </View>
+                    <Text style={styles.attributeValue} testID={`attribute-${key}`}>
+                      {character.attributes[key]}
+                    </Text>
+                    <Pressable
+                      style={({ pressed }) => [
+                        styles.plusBtn,
+                        points <= 0 && styles.plusBtnDisabled,
+                        pressed && styles.pressed,
+                      ]}
+                      disabled={points <= 0}
+                      onPress={() => onSpendAttributePoint(key)}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Aumentar ${ATTRIBUTE_LABELS[key]}`}
+                      accessibilityState={{ disabled: points <= 0 }}
+                    >
+                      <Text style={styles.plusBtnText}>+</Text>
+                    </Pressable>
+                  </View>
+                ))}
+              </View>
+              {spent > 0 ? (
+                <Pressable
+                  style={({ pressed }) => [styles.secondary, pressed && styles.pressed]}
+                  onPress={confirmAttributeReset}
+                  accessibilityRole="button"
+                  accessibilityLabel="Devolver pontos de atributo"
+                >
+                  <Text style={styles.secondaryText}>
+                    Devolver {spent} {spent === 1 ? 'ponto' : 'pontos'}
+                  </Text>
+                </Pressable>
+              ) : null}
+            </View>
+          ) : null}
+
+          {tab === 'TALENTS' ? (
+            <View style={styles.panel}>
+              <TalentTree state={state} onHeroChange={onHeroChange} />
+            </View>
+          ) : null}
+
+          {tab === 'SKILLS' ? (
+            <View style={styles.panel}>
+              <SkillLoadout state={state} onHeroChange={onHeroChange} />
+            </View>
+          ) : null}
+
+          {tab === 'JOURNEY' ? (
+            <View style={styles.panel}>
+              <View style={styles.statGrid}>
+                {journey.map((entry) => (
+                  <View key={entry.label} style={styles.statCard}>
+                    <Text style={styles.statValue}>{entry.value}</Text>
+                    <Text style={styles.statLabel}>{entry.label}</Text>
+                  </View>
+                ))}
+              </View>
+              <Text style={styles.section}>
+                Conquistas {unlockedCount}/{ACHIEVEMENTS.length}
+              </Text>
+              <View style={styles.list}>
+                {ACHIEVEMENTS.map((achievement) => {
+                  const unlocked = achievement.isUnlocked(state);
+                  return (
+                    <View
+                      key={achievement.id}
+                      style={styles.achievementRow}
+                      accessible
+                      accessibilityLabel={`${achievement.title}. ${achievement.description} ${
+                        unlocked ? 'Desbloqueada.' : 'Bloqueada.'
+                      }`}
+                    >
+                      <View style={[styles.medal, unlocked && styles.medalUnlocked]} />
+                      <View style={styles.achievementCopy}>
+                        <Text style={[styles.achievementTitle, !unlocked && styles.locked]}>
+                          {achievement.title}
+                        </Text>
+                        <Text style={styles.achievementDescription}>{achievement.description}</Text>
+                      </View>
+                    </View>
+                  );
+                })}
+              </View>
+            </View>
+          ) : null}
+
+          {tab === 'SETTINGS' ? (
+            <View style={styles.panel}>
+              <Text style={styles.sectionFirst}>Meta do dia</Text>
+              <View style={styles.choiceRow}>
+                {([1, 2, 3] as DailyGoalTarget[]).map((target) => {
+                  const selected = state.settings.dailyGoalTarget === target;
+                  return (
+                    <Pressable
+                      key={target}
+                      onPress={() => onPatchSettings({ dailyGoalTarget: target })}
+                      style={[styles.choice, selected && styles.choiceOn]}
+                      accessibilityRole="radio"
+                      accessibilityState={{ selected }}
+                      accessibilityLabel={`Meta de ${target} ${target === 1 ? 'quest' : 'quests'}`}
+                    >
+                      <Text style={styles.choiceText}>{target}</Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+
+              <Text style={styles.section}>Lembrete</Text>
+              <View style={styles.choiceRow}>
+                {[7, 8, 12, 18, 21].map((hour) => {
+                  const selected = state.settings.reminder?.hour === hour;
+                  return (
+                    <Pressable
+                      key={hour}
+                      onPress={() => onPatchSettings({ reminder: { hour, minute: 0 } })}
+                      style={[styles.choice, selected && styles.choiceOn]}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Lembrete às ${hour} horas`}
+                    >
+                      <Text style={styles.choiceText}>{hour}h</Text>
+                    </Pressable>
+                  );
+                })}
+                <Pressable
+                  onPress={() => onPatchSettings({ reminder: null })}
+                  style={[styles.choice, state.settings.reminder == null && styles.choiceOn]}
+                  accessibilityRole="button"
+                  accessibilityLabel="Desligar lembrete"
+                >
+                  <Text style={styles.choiceText}>Off</Text>
+                </Pressable>
+              </View>
+
+              <Text style={styles.section}>Jogo</Text>
+              <View style={styles.choiceRow}>
+                <Pressable
+                  onPress={() => onPatchSettings({ soundEnabled: !state.settings.soundEnabled })}
+                  style={[styles.choice, state.settings.soundEnabled && styles.choiceOn]}
+                  accessibilityRole="switch"
+                  accessibilityState={{ checked: state.settings.soundEnabled }}
+                >
+                  <Text style={styles.choiceText}>
+                    Som {state.settings.soundEnabled ? 'ligado' : 'desligado'}
+                  </Text>
+                </Pressable>
+                <Pressable
+                  onPress={onToggleShield}
+                  disabled={!shieldReady && !state.settings.streakShieldArmed}
+                  style={[styles.choice, state.settings.streakShieldArmed && styles.choiceOn]}
+                  accessibilityRole="button"
+                >
+                  <Text style={styles.choiceText}>
+                    {state.settings.streakShieldArmed
+                      ? 'Escudo armado'
+                      : shieldReady
+                        ? 'Armar escudo do mês'
+                        : 'Escudo do mês usado'}
+                  </Text>
+                </Pressable>
+              </View>
+
+              <Text style={styles.section}>Herói</Text>
+              <View style={styles.inline}>
+                <TextInput
+                  value={nameDraft}
+                  onChangeText={setNameDraft}
+                  style={[styles.input, styles.inputGrow]}
+                  maxLength={24}
+                  accessibilityLabel="Novo nome do herói"
+                />
+                <Pressable
+                  style={styles.choice}
+                  onPress={() => {
+                    const message = onRename(nameDraft);
+                    setFormError(message);
+                  }}
+                  accessibilityRole="button"
+                  accessibilityLabel="Salvar nome do herói"
+                >
+                  <Text style={styles.choiceText}>Salvar</Text>
+                </Pressable>
+              </View>
+              {formError ? <Text style={styles.error}>{formError}</Text> : null}
+              <View style={styles.choiceRow}>
+                {(Object.keys(CLASS_DEFAULTS) as CharacterClass[]).map((key) => (
+                  <Pressable
+                    key={key}
+                    onPress={() => onChangeClass(key)}
+                    style={[
+                      styles.choice,
+                      state.character.characterClass === key && styles.choiceOn,
+                    ]}
+                    accessibilityRole="radio"
+                    accessibilityState={{ selected: state.character.characterClass === key }}
+                  >
+                    <Text style={styles.choiceText}>{CLASS_DEFAULTS[key].label}</Text>
+                  </Pressable>
+                ))}
+              </View>
+
+              <Text style={styles.section}>Save</Text>
+              <Text style={styles.hint}>{cloudSyncStatus().message}</Text>
+              <View style={styles.choiceRow}>
+                <Pressable style={styles.choice} onPress={onExportSave} accessibilityRole="button">
+                  <Text style={styles.choiceText}>Exportar save</Text>
+                </Pressable>
+                <Pressable style={styles.choice} onPress={onShareWeek} accessibilityRole="button">
+                  <Text style={styles.choiceText}>Copiar resumo da semana</Text>
+                </Pressable>
+              </View>
+              <View style={styles.inline}>
+                <TextInput
+                  value={importDraft}
+                  onChangeText={setImportDraft}
+                  style={[styles.input, styles.inputGrow]}
+                  placeholder="Cole o JSON do save"
+                  placeholderTextColor={colors.textMuted}
+                  accessibilityLabel="Importar save"
+                />
+                <Pressable
+                  style={styles.choice}
+                  onPress={() => setFormError(onImportSave(importDraft))}
+                  accessibilityRole="button"
+                  accessibilityLabel="Importar save colado"
+                >
+                  <Text style={styles.choiceText}>Importar</Text>
+                </Pressable>
+              </View>
+
+              <Pressable
+                style={({ pressed }) => [styles.resetBtn, pressed && styles.pressed]}
+                onPress={confirmReset}
+                accessibilityRole="button"
+                accessibilityLabel="Reiniciar jornada"
+              >
+                <Text style={styles.resetBtnText}>Reiniciar jornada</Text>
+              </Pressable>
+            </View>
+          ) : null}
 
           <Text style={styles.footer}>QuestLog v{appConfig.expo.version} · Shiguemori</Text>
         </ScrollView>
@@ -350,84 +495,111 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingBottom: 8,
+    paddingHorizontal: space.gutter,
+    paddingBottom: space.sm,
   },
-  eyebrow: {
-    fontSize: 12,
-    fontWeight: '800',
-    letterSpacing: 2,
-    textTransform: 'uppercase',
-    color: colors.amber,
-  },
+  eyebrow: { fontSize: 13, fontWeight: '800', color: colors.amber },
   closeBtn: {
     minHeight: 44,
     minWidth: 72,
-    paddingHorizontal: 14,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.border,
+    paddingHorizontal: space.md,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  closeBtnText: { fontSize: 14, fontWeight: '700', color: colors.textMuted },
-  content: { paddingHorizontal: 20, paddingTop: 8 },
-  identity: { flexDirection: 'row', alignItems: 'center', gap: 16, marginBottom: 16 },
+  closeBtnText: { fontSize: 15, fontWeight: '700', color: colors.textMuted },
+  content: { paddingHorizontal: space.gutter, paddingTop: space.sm },
+  identity: { flexDirection: 'row', alignItems: 'center', gap: space.lg, marginBottom: space.md },
   identityCopy: { flex: 1 },
-  name: { fontSize: 26, fontWeight: '800', color: colors.text, letterSpacing: -0.3 },
-  rank: { marginTop: 4, fontSize: 14, fontWeight: '600', color: colors.amberSoft },
-  section: {
-    marginTop: 24,
-    marginBottom: 8,
+  name: { fontSize: 24, fontWeight: '800', color: colors.text },
+  rank: { marginTop: 2, fontSize: 14, fontWeight: '600', color: colors.amberSoft },
+
+  tabs: { gap: space.sm, paddingVertical: space.lg },
+  tab: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.xs + 2,
+    minHeight: 40,
+    paddingHorizontal: space.lg,
+    borderRadius: radius.pill,
+    backgroundColor: colors.bgElevated,
+  },
+  tabOn: { backgroundColor: colors.amber },
+  tabText: { fontSize: 14, fontWeight: '700', color: colors.textMuted },
+  tabTextOn: { color: colors.bg },
+  tabCount: {
+    minWidth: 20,
+    paddingHorizontal: 6,
+    borderRadius: radius.pill,
+    backgroundColor: colors.dangerBg,
+    color: colors.dangerText,
     fontSize: 12,
     fontWeight: '800',
-    letterSpacing: 1.2,
-    textTransform: 'uppercase',
-    color: colors.textDim,
+    textAlign: 'center',
+    fontVariant: ['tabular-nums'],
+    overflow: 'hidden',
   },
-  hint: { fontSize: 13, color: colors.textMuted, marginBottom: 10 },
+  panel: { gap: space.md },
+
+  section: { marginTop: space.lg, fontSize: 13, fontWeight: '800', color: colors.textMuted },
+  sectionFirst: { fontSize: 13, fontWeight: '800', color: colors.textMuted },
+  hint: { fontSize: 14, color: colors.textMuted },
   hintActive: { color: colors.amberSoft, fontWeight: '700' },
-  card: {
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.bgElevated,
-    paddingHorizontal: 14,
+  list: { gap: space.xs },
+  attributeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    minHeight: 64,
+    gap: space.md,
+    paddingHorizontal: space.md,
+    borderRadius: radius.md,
+    backgroundColor: colors.bgSoft,
   },
-  divider: { borderTopWidth: 1, borderTopColor: colors.border },
-  attributeRow: { flexDirection: 'row', alignItems: 'center', minHeight: 56, gap: 12 },
-  attributeLabel: { flex: 1, fontSize: 15, fontWeight: '600', color: colors.text },
+  attributeCopy: { flex: 1, gap: 2, paddingVertical: space.sm },
+  attributeLabel: { fontSize: 15, fontWeight: '700', color: colors.text },
+  attributeEffect: { fontSize: 12, lineHeight: 16, color: colors.textMuted },
   attributeValue: {
     minWidth: 32,
     textAlign: 'right',
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: '800',
     color: colors.amberSoft,
+    fontVariant: ['tabular-nums'],
   },
   plusBtn: {
     width: 44,
     height: 44,
-    borderRadius: 12,
+    borderRadius: radius.sm,
     backgroundColor: colors.amber,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  plusBtnDisabled: { backgroundColor: colors.bgSoft, opacity: 0.5 },
+  plusBtnDisabled: { backgroundColor: colors.bgElevated, opacity: 0.5 },
   plusBtnText: { fontSize: 22, lineHeight: 24, fontWeight: '800', color: colors.bg },
-  statGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  secondary: { minHeight: 44, alignItems: 'center', justifyContent: 'center' },
+  secondaryText: { fontSize: 14, fontWeight: '700', color: colors.textMuted },
+
+  statGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },
   statCard: {
     flexGrow: 1,
     flexBasis: '45%',
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.bgElevated,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
+    borderRadius: radius.md,
+    backgroundColor: colors.bgSoft,
+    paddingHorizontal: space.md,
+    paddingVertical: space.md,
   },
-  statValue: { fontSize: 22, fontWeight: '800', color: colors.text },
+  statValue: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: colors.text,
+    fontVariant: ['tabular-nums'],
+  },
   statLabel: { marginTop: 2, fontSize: 12, fontWeight: '600', color: colors.textMuted },
-  achievementRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12 },
+  achievementRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.md,
+    paddingVertical: space.sm,
+  },
   medal: {
     width: 14,
     height: 14,
@@ -439,41 +611,39 @@ const styles = StyleSheet.create({
   achievementCopy: { flex: 1 },
   achievementTitle: { fontSize: 15, fontWeight: '700', color: colors.text },
   achievementDescription: { marginTop: 2, fontSize: 12, color: colors.textMuted },
-  locked: { color: colors.textDim },
+  locked: { color: colors.textMuted },
+
   resetBtn: {
-    marginTop: 28,
+    marginTop: space.xl,
     minHeight: 48,
-    borderRadius: 12,
+    borderRadius: radius.md,
     borderWidth: 1,
     borderColor: colors.danger,
     alignItems: 'center',
     justifyContent: 'center',
   },
   resetBtnText: { fontSize: 15, fontWeight: '700', color: colors.danger },
-  footer: { marginTop: 20, textAlign: 'center', fontSize: 12, color: colors.textDim },
-  choiceRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  footer: { marginTop: space.xl, textAlign: 'center', fontSize: 12, color: colors.textMuted },
+  choiceRow: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },
   choice: {
     minHeight: 44,
-    paddingHorizontal: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.border,
+    paddingHorizontal: space.md,
+    borderRadius: radius.md,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.bgElevated,
   },
-  choiceOn: { borderColor: colors.amber, backgroundColor: colors.amberWash },
-  choiceText: { fontSize: 13, fontWeight: '700', color: colors.text },
-  label: { marginTop: 8, fontSize: 13, fontWeight: '700', color: colors.textMuted },
+  choiceOn: { backgroundColor: colors.amberWash, borderWidth: 1, borderColor: colors.amber },
+  choiceText: { fontSize: 14, fontWeight: '700', color: colors.text },
+  inline: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
   input: {
     minHeight: 48,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.border,
+    borderRadius: radius.md,
     backgroundColor: colors.bgElevated,
     color: colors.text,
-    paddingHorizontal: 12,
+    paddingHorizontal: space.md,
   },
+  inputGrow: { flex: 1 },
   error: { color: colors.danger, fontSize: 13, fontWeight: '600' },
   pressed: { opacity: 0.85, transform: [{ scale: 0.97 }] },
 });

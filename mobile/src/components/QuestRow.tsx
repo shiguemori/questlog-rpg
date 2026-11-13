@@ -4,6 +4,8 @@ import { msUntilXpEligible } from '../domain/antiFarm';
 import { CATEGORY_LABELS, DIFFICULTY_LABELS } from '../domain/constants';
 import type { Quest } from '../domain/types';
 import { colors } from '../theme/colors';
+import { radius, space } from '../theme/spacing';
+import { CharacterArt } from './CharacterArt';
 
 export interface QuestRowProps {
   quest: Quest;
@@ -64,6 +66,9 @@ function QuestRowBase({
 
   return (
     <View style={[styles.row, quest.completed && styles.rowDone]}>
+      <View style={styles.monster}>
+        <CharacterArt assetKey={`enemy.${quest.category.toLowerCase()}`} size={44} />
+      </View>
       <View style={styles.copy}>
         <Text style={[styles.title, quest.completed && styles.titleDone]}>{quest.title}</Text>
         <Text style={styles.meta}>
@@ -144,24 +149,33 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: space.md,
     backgroundColor: colors.bgElevated,
-    borderRadius: 14,
-    paddingVertical: 12,
-    paddingLeft: 14,
-    paddingRight: 6,
-    marginHorizontal: 20,
-    marginBottom: 8,
+    borderRadius: radius.lg,
+    paddingVertical: space.lg,
+    paddingLeft: space.lg,
+    paddingRight: space.sm,
+    marginHorizontal: space.gutter,
+    marginBottom: space.md,
     borderWidth: 1,
     borderColor: colors.border,
   },
   rowDone: { opacity: 0.7 },
-  copy: { flex: 1 },
+  monster: {
+    width: 44,
+    height: 44,
+    borderRadius: radius.md,
+    backgroundColor: colors.bgSoft,
+    alignItems: 'center',
+    justifyContent: 'center',
+    alignSelf: 'flex-start',
+  },
+  copy: { flex: 1, minWidth: 0 },
   title: { fontSize: 15, fontWeight: '700', color: colors.text },
   titleDone: { textDecorationLine: 'line-through', color: colors.textMuted },
-  meta: { marginTop: 4, fontSize: 12, color: colors.textMuted },
-  waiting: { marginTop: 4, fontSize: 12, fontWeight: '700', color: colors.amberSoft },
-  rowActions: { flexDirection: 'row', gap: 8, marginTop: 6 },
+  meta: { marginTop: space.xs + 2, fontSize: 12, color: colors.textMuted },
+  waiting: { marginTop: space.xs + 2, fontSize: 12, fontWeight: '700', color: colors.amberSoft },
+  rowActions: { flexDirection: 'row', gap: space.lg, marginTop: space.xs },
   linkBtn: { minHeight: 44, justifyContent: 'center' },
   linkText: { fontSize: 13, fontWeight: '700', color: colors.amberSoft },
   completeBtn: {

@@ -1,3 +1,4 @@
+import { ATTRIBUTE_KEYS, CLASS_DEFAULTS } from './constants';
 import { daysInCalendarWeek } from './engagement';
 import { localIsoDate } from './dates';
 import type { AppState, AttributeKey } from './types';
@@ -49,6 +50,35 @@ export function spendAttributePoint(state: AppState, attribute: AttributeKey): A
       },
     },
   };
+}
+
+/**
+ * Caso de uso: devolver todos os pontos de atributo gastos.
+ * Os atributos voltam ao valor inicial da classe. Null se não houver nada gasto.
+ */
+export function resetAttributePoints(state: AppState): AppState | null {
+  const { character } = state;
+  const defaults = CLASS_DEFAULTS[character.characterClass].attributes;
+  let refund = 0;
+  for (const key of ATTRIBUTE_KEYS) {
+    refund += Math.max(0, character.attributes[key] - defaults[key]);
+  }
+  if (refund <= 0) return null;
+  const attributes = { ...character.attributes };
+  for (const key of ATTRIBUTE_KEYS) attributes[key] = Math.min(attributes[key], defaults[key]);
+  return {
+    ...state,
+    character: { ...character, attributes, attributePoints: character.attributePoints + refund },
+  };
+}
+
+/** Pontos de atributo já gastos (o que o reset devolveria). */
+export function spentAttributePoints(state: AppState): number {
+  const defaults = CLASS_DEFAULTS[state.character.characterClass].attributes;
+  return ATTRIBUTE_KEYS.reduce(
+    (sum, key) => sum + Math.max(0, state.character.attributes[key] - defaults[key]),
+    0,
+  );
 }
 
 export interface Achievement {
