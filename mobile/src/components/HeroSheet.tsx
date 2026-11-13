@@ -29,7 +29,6 @@ import {
 } from '../domain/progression';
 import { talentPointsLeft } from '../domain/talents';
 import { canArmStreakShield } from '../domain/rewards';
-import { cloudSyncStatus } from '../domain/state';
 import { localIsoDate } from '../domain/dates';
 import type {
   Attributes,
@@ -42,7 +41,7 @@ import type {
 import { useReducedMotion } from '../platform/feedback';
 import { colors } from '../theme/colors';
 import { radius, space } from '../theme/spacing';
-import { HeroAvatar } from './HeroAvatar';
+import { CharacterArt } from './CharacterArt';
 import { SkillLoadout } from './hero/SkillLoadout';
 import { TalentTree } from './hero/TalentTree';
 import { XpBar } from './XpBar';
@@ -69,8 +68,6 @@ export interface HeroSheetProps {
   onChangeClass: (characterClass: CharacterClass) => void;
   onPatchSettings: (partial: Partial<PlayerSettings>) => void;
   onToggleShield: () => void;
-  onImportSave: (raw: string) => string | null;
-  onExportSave: () => void;
   onShareWeek: () => void;
 }
 
@@ -108,12 +105,9 @@ export function HeroSheet({
   onChangeClass,
   onPatchSettings,
   onToggleShield,
-  onImportSave,
-  onExportSave,
   onShareWeek,
 }: HeroSheetProps) {
   const [nameDraft, setNameDraft] = useState(state.character.name);
-  const [importDraft, setImportDraft] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
   const today = localIsoDate(new Date());
   const shieldReady = canArmStreakShield(state.settings, today);
@@ -184,11 +178,13 @@ export function HeroSheet({
           showsVerticalScrollIndicator={false}
         >
           <View style={styles.identity}>
-            <HeroAvatar
-              characterClass={character.characterClass}
-              initial={character.name}
-              size={64}
-            />
+            <View style={styles.portrait}>
+              <CharacterArt
+                assetKey={`hero.${character.characterClass.toLowerCase()}`}
+                size={84}
+                accessibilityLabel={`${classLabel} ${character.name}`}
+              />
+            </View>
             <View style={styles.identityCopy}>
               <Text style={styles.name}>{character.name}</Text>
               <Text style={styles.rank}>
@@ -198,12 +194,7 @@ export function HeroSheet({
           </View>
           <XpBar xp={character.xp} maxXp={character.maxXp} level={character.level} />
 
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.tabs}
-            accessibilityRole="tablist"
-          >
+          <View style={styles.tabs} accessibilityRole="tablist">
             {TABS.map((entry) => {
               const selected = tab === entry.id;
               const count =
@@ -224,7 +215,7 @@ export function HeroSheet({
                 </Pressable>
               );
             })}
-          </ScrollView>
+          </View>
 
           {tab === 'ATTRIBUTES' ? (
             <View style={styles.panel}>
@@ -442,32 +433,10 @@ export function HeroSheet({
                 ))}
               </View>
 
-              <Text style={styles.section}>Save</Text>
-              <Text style={styles.hint}>{cloudSyncStatus().message}</Text>
+              <Text style={styles.section}>Semana</Text>
               <View style={styles.choiceRow}>
-                <Pressable style={styles.choice} onPress={onExportSave} accessibilityRole="button">
-                  <Text style={styles.choiceText}>Exportar save</Text>
-                </Pressable>
                 <Pressable style={styles.choice} onPress={onShareWeek} accessibilityRole="button">
                   <Text style={styles.choiceText}>Copiar resumo da semana</Text>
-                </Pressable>
-              </View>
-              <View style={styles.inline}>
-                <TextInput
-                  value={importDraft}
-                  onChangeText={setImportDraft}
-                  style={[styles.input, styles.inputGrow]}
-                  placeholder="Cole o JSON do save"
-                  placeholderTextColor={colors.textMuted}
-                  accessibilityLabel="Importar save"
-                />
-                <Pressable
-                  style={styles.choice}
-                  onPress={() => setFormError(onImportSave(importDraft))}
-                  accessibilityRole="button"
-                  accessibilityLabel="Importar save colado"
-                >
-                  <Text style={styles.choiceText}>Importar</Text>
                 </Pressable>
               </View>
 
@@ -489,6 +458,8 @@ export function HeroSheet({
   );
 }
 
+const TAB_PAD = 4;
+
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.bg },
   topBar: {
@@ -508,27 +479,45 @@ const styles = StyleSheet.create({
   },
   closeBtnText: { fontSize: 15, fontWeight: '700', color: colors.textMuted },
   content: { paddingHorizontal: space.gutter, paddingTop: space.sm },
-  identity: { flexDirection: 'row', alignItems: 'center', gap: space.lg, marginBottom: space.md },
+  identity: { flexDirection: 'row', alignItems: 'center', gap: space.md, marginBottom: space.md },
+  portrait: {
+    width: 92,
+    height: 92,
+    borderRadius: radius.lg,
+    backgroundColor: colors.bgElevated,
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    overflow: 'hidden',
+  },
   identityCopy: { flex: 1 },
   name: { fontSize: 24, fontWeight: '800', color: colors.text },
   rank: { marginTop: 2, fontSize: 14, fontWeight: '600', color: colors.amberSoft },
 
-  tabs: { gap: space.sm, paddingVertical: space.lg },
-  tab: {
+  // Trilho com as 5 abas visíveis de uma vez (sem rolar e sem esconder "Ajustes").
+  tabs: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: space.xs + 2,
-    minHeight: 40,
-    paddingHorizontal: space.lg,
-    borderRadius: radius.pill,
+    marginVertical: space.lg,
+    padding: TAB_PAD,
+    borderRadius: radius.md,
     backgroundColor: colors.bgElevated,
   },
+  tab: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 40,
+    paddingHorizontal: 2,
+    borderRadius: radius.md - TAB_PAD,
+  },
   tabOn: { backgroundColor: colors.amber },
-  tabText: { fontSize: 14, fontWeight: '700', color: colors.textMuted },
+  tabText: { fontSize: 12, fontWeight: '800', color: colors.textMuted },
   tabTextOn: { color: colors.bg },
   tabCount: {
-    minWidth: 20,
-    paddingHorizontal: 6,
+    position: 'absolute',
+    top: -6,
+    right: -2,
+    minWidth: 18,
+    paddingHorizontal: 5,
     borderRadius: radius.pill,
     backgroundColor: colors.dangerBg,
     color: colors.dangerText,

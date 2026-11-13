@@ -8,7 +8,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import type { BattleEvent } from '../../domain/battle';
-import { EVENT_STEP_MS } from './BattleStage';
+import { EVENT_STEP_MS, WINDUP_MS } from './BattleStage';
 
 /**
  * Objeto de cada habilidade do herói, renderizado no Blender (384×384, fundo transparente).
@@ -134,10 +134,16 @@ interface PropShotProps {
   to: Point;
   size: number;
   delay: number;
+  /** Cópia atrasada (rastro): quanto atrás do original e quão transparente. */
+  lag?: number;
+  alpha?: number;
 }
 
+/** Movimentos que deixam rastro: o objeto voa rápido. */
+const TRAILED: readonly CastMotion[] = ['THROW', 'DASH', 'SPIN', 'STICK', 'DROP'];
+
 /** Um objeto voando. Monta, anima uma vez e some. */
-function PropShot({ source, motion, from, to, size, delay }: PropShotProps) {
+function PropShot({ source, motion, from, to, size, delay, lag = 0, alpha = 1 }: PropShotProps) {
   const progress = useSharedValue(0);
 
   useEffect(() => {
@@ -148,8 +154,10 @@ function PropShot({ source, motion, from, to, size, delay }: PropShotProps) {
   const angle = (Math.atan2(to.y - from.y, to.x - from.x) * 180) / Math.PI;
 
   const style = useAnimatedStyle(() => {
-    const p = progress.value;
+    const p = progress.value - lag;
     if (p <= 0) return { opacity: 0 };
+    // O rastro só aparece enquanto o objeto viaja.
+    if (lag > 0 && p > 0.5) return { opacity: 0 };
     const fade = p > 0.82 ? (1 - p) / 0.18 : 1;
     const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
     let x = to.x;
@@ -233,7 +241,7 @@ function PropShot({ source, motion, from, to, size, delay }: PropShotProps) {
         break;
     }
     return {
-      opacity,
+      opacity: opacity * alpha,
       transform: [
         { translateX: x - size / 2 },
         { translateY: y - size / 2 },
@@ -278,7 +286,8 @@ export function SkillCastLayer({ events, hero, enemy, size, reduceMotion }: Skil
     const source = SKILL_ART[key];
     const motion = SKILL_MOTION[key];
     if (!source || !motion) return;
-    const delay = index * EVENT_STEP_MS;
+    // O objeto sai no fim do preparo do herói.
+    const delay = index * EVENT_STEP_MS + WINDUP_MS - 40;
     if (motion === 'RAIN') {
       [-1, 0, 1].forEach((offset, copy) => {
         shots.push(
@@ -295,17 +304,27 @@ export function SkillCastLayer({ events, hero, enemy, size, reduceMotion }: Skil
       });
       return;
     }
-    shots.push(
-      <PropShot
-        key={`${event.seq}`}
-        source={source}
-        motion={motion}
-        from={hero}
-        to={enemy}
-        size={motion === 'SLAM' ? size * 1.3 : size}
-        delay={delay}
-      />,
-    );
+    const trail = TRAILED.includes(motion)
+      ? [
+          { lag: 0.1, alpha: 0.18 },
+          { lag: 0.05, alpha: 0.38 },
+        ]
+      : [];
+    [...trail, { lag: 0, alpha: 1 }].forEach((ghost) => {
+      shots.push(
+        <PropShot
+          key={`${event.seq}-${ghost.lag}`}
+          source={source}
+          motion={motion}
+          from={hero}
+          to={enemy}
+          size={motion === 'SLAM' ? size * 1.3 : size}
+          delay={delay}
+          lag={ghost.lag}
+          alpha={ghost.alpha}
+        />,
+      );
+    });
   });
   return (
     <View style={StyleSheet.absoluteFill} pointerEvents="none">

@@ -1,14 +1,6 @@
 import React, { useEffect } from 'react';
-import {
-  Animated,
-  Easing,
-  Modal,
-  Pressable,
-  StyleSheet,
-  Text,
-  useAnimatedValue,
-  View,
-} from 'react-native';
+import { Animated, Easing, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useAnimatedValue } from '../motion/useAnimatedValue';
 import { XP_DENY_COPY } from '../domain/antiFarm';
 import type { QuestVictoryEvent } from '../domain/victory';
 import { useReducedMotion } from '../platform/feedback';

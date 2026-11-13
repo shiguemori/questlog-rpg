@@ -9,9 +9,9 @@ import {
   StyleSheet,
   Text,
   TextInput,
-  useAnimatedValue,
   View,
 } from 'react-native';
+import { useAnimatedValue } from '../motion/useAnimatedValue';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CATEGORIES, CATEGORY_LABELS, DIFFICULTY_LABELS, XP_REWARDS } from '../domain/constants';
 import { QUEST_TITLE_MAX_LENGTH, validateQuestTitle, type NewQuestInput } from '../domain/quests';

@@ -22,22 +22,25 @@ export interface CharacterArtProps {
   assetKey: string;
   size: number;
   accessibilityLabel?: string;
+  /** Pinta a silhueta numa cor só (clarão de dano). */
+  tint?: string;
 }
 
 export const CharacterArt = memo(function CharacterArt({
   assetKey,
   size,
   accessibilityLabel,
+  tint,
 }: CharacterArtProps) {
   const source = CHARACTER_ART[assetKey];
   if (!source) return null;
   return (
     <Image
       source={source}
-      style={{ width: size, height: size }}
+      style={[{ width: size, height: size }, tint ? { tintColor: tint } : null]}
       resizeMode="contain"
-      accessibilityRole="image"
-      accessibilityLabel={accessibilityLabel}
+      accessibilityRole={tint ? undefined : 'image'}
+      accessibilityLabel={tint ? undefined : accessibilityLabel}
       accessibilityIgnoresInvertColors
     />
   );

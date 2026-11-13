@@ -2,10 +2,19 @@ import React, { memo } from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { msUntilXpEligible } from '../domain/antiFarm';
 import { CATEGORY_LABELS, DIFFICULTY_LABELS } from '../domain/constants';
-import type { Quest } from '../domain/types';
+import type { Category, Quest } from '../domain/types';
 import { colors } from '../theme/colors';
 import { radius, space } from '../theme/spacing';
 import { CharacterArt } from './CharacterArt';
+
+/** Fundo do retrato do monstro: o tom do cômodo da arena dele. */
+const SOCKET_TINT: Record<Category, string> = {
+  STUDY: 'rgba(99, 102, 241, 0.22)',
+  WORK: 'rgba(251, 146, 60, 0.2)',
+  HEALTH: 'rgba(52, 211, 153, 0.2)',
+  HOME: 'rgba(45, 212, 191, 0.2)',
+  OTHER: 'rgba(168, 85, 247, 0.22)',
+};
 
 export interface QuestRowProps {
   quest: Quest;
@@ -66,78 +75,79 @@ function QuestRowBase({
 
   return (
     <View style={[styles.row, quest.completed && styles.rowDone]}>
-      <View style={styles.monster}>
-        <CharacterArt assetKey={`enemy.${quest.category.toLowerCase()}`} size={44} />
-      </View>
-      <View style={styles.copy}>
-        <Text style={[styles.title, quest.completed && styles.titleDone]}>{quest.title}</Text>
-        <Text style={styles.meta}>
-          {CATEGORY_LABELS[quest.category]} · {DIFFICULTY_LABELS[quest.difficulty]} · +{quest.xp} XP
-        </Text>
-        {waitingForXp ? (
-          <Text style={styles.waiting} testID={`quest-wait-${quest.id}`}>
-            XP libera em {secondsLeft}s
-          </Text>
-        ) : null}
-        {!quest.completed ? (
-          <View style={styles.rowActions}>
-            <Pressable
-              onPress={() => onEdit(quest.id)}
-              accessibilityRole="button"
-              accessibilityLabel={`Editar quest ${quest.title}`}
-              style={styles.linkBtn}
-            >
-              <Text style={styles.linkText}>Editar</Text>
-            </Pressable>
-            <Pressable
-              onPress={() => onToggleRecurring(quest.id)}
-              accessibilityRole="button"
-              accessibilityLabel={
-                quest.recurring
-                  ? `Tirar hábito diário de ${quest.title}`
-                  : `Tornar ${quest.title} um hábito diário`
-              }
-              style={styles.linkBtn}
-            >
-              <Text style={styles.linkText}>{quest.recurring ? 'Diária' : 'Fixar'}</Text>
-            </Pressable>
+      <View style={styles.top}>
+        <View style={[styles.monster, { backgroundColor: SOCKET_TINT[quest.category] }]}>
+          <CharacterArt assetKey={`enemy.${quest.category.toLowerCase()}`} size={52} />
+        </View>
+        <View style={styles.copy}>
+          <Text style={[styles.title, quest.completed && styles.titleDone]}>{quest.title}</Text>
+          <View style={styles.metaRow}>
+            <Text style={styles.meta}>
+              {CATEGORY_LABELS[quest.category]} · {DIFFICULTY_LABELS[quest.difficulty]}
+            </Text>
+            <Text style={styles.xpPill}>+{quest.xp} XP</Text>
           </View>
-        ) : null}
+          {waitingForXp ? (
+            <Text style={styles.waiting} testID={`quest-wait-${quest.id}`}>
+              XP libera em {secondsLeft}s
+            </Text>
+          ) : null}
+        </View>
+        {quest.completed ? <Text style={styles.doneBadge}>Feita</Text> : null}
+        <Pressable
+          style={({ pressed }) => [styles.deleteBtn, pressed && styles.pressed]}
+          onPress={handleDelete}
+          accessibilityRole="button"
+          accessibilityLabel={`Excluir quest ${quest.title}`}
+          hitSlop={4}
+        >
+          <Text style={styles.deleteBtnText}>×</Text>
+        </Pressable>
       </View>
 
-      {quest.completed ? (
-        <Text style={styles.doneBadge}>Feita</Text>
-      ) : (
-        <Pressable
-          style={({ pressed }) => [
-            styles.completeBtn,
-            waitingForXp && styles.completeBtnWaiting,
-            pressed && styles.pressed,
-          ]}
-          onPress={handleComplete}
-          accessibilityRole="button"
-          accessibilityLabel={`Concluir quest ${quest.title}`}
-          accessibilityHint={
-            waitingForXp
-              ? `XP libera em ${secondsLeft} segundos. Concluir agora não dá XP.`
-              : `Ganha ${quest.xp} de XP.`
-          }
-        >
-          <Text style={[styles.completeBtnText, waitingForXp && styles.completeBtnTextWaiting]}>
-            Feito
-          </Text>
-        </Pressable>
-      )}
-
-      <Pressable
-        style={({ pressed }) => [styles.deleteBtn, pressed && styles.pressed]}
-        onPress={handleDelete}
-        accessibilityRole="button"
-        accessibilityLabel={`Excluir quest ${quest.title}`}
-        hitSlop={4}
-      >
-        <Text style={styles.deleteBtnText}>×</Text>
-      </Pressable>
+      {!quest.completed ? (
+        <View style={styles.bottom}>
+          <Pressable
+            onPress={() => onEdit(quest.id)}
+            accessibilityRole="button"
+            accessibilityLabel={`Editar quest ${quest.title}`}
+            style={styles.linkBtn}
+          >
+            <Text style={styles.linkText}>Editar</Text>
+          </Pressable>
+          <Pressable
+            onPress={() => onToggleRecurring(quest.id)}
+            accessibilityRole="button"
+            accessibilityLabel={
+              quest.recurring
+                ? `Tirar hábito diário de ${quest.title}`
+                : `Tornar ${quest.title} um hábito diário`
+            }
+            style={styles.linkBtn}
+          >
+            <Text style={styles.linkText}>{quest.recurring ? 'Diária' : 'Fixar'}</Text>
+          </Pressable>
+          <Pressable
+            style={({ pressed }) => [
+              styles.completeBtn,
+              waitingForXp && styles.completeBtnWaiting,
+              pressed && styles.pressed,
+            ]}
+            onPress={handleComplete}
+            accessibilityRole="button"
+            accessibilityLabel={`Concluir quest ${quest.title}`}
+            accessibilityHint={
+              waitingForXp
+                ? `XP libera em ${secondsLeft} segundos. Concluir agora não dá XP.`
+                : `Ganha ${quest.xp} de XP.`
+            }
+          >
+            <Text style={[styles.completeBtnText, waitingForXp && styles.completeBtnTextWaiting]}>
+              Feito
+            </Text>
+          </Pressable>
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -147,13 +157,11 @@ export const QuestRow = memo(QuestRowBase);
 
 const styles = StyleSheet.create({
   row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: space.md,
+    gap: space.sm,
     backgroundColor: colors.bgElevated,
     borderRadius: radius.lg,
-    paddingVertical: space.lg,
-    paddingLeft: space.lg,
+    paddingVertical: space.md,
+    paddingLeft: space.md,
     paddingRight: space.sm,
     marginHorizontal: space.gutter,
     marginBottom: space.md,
@@ -161,26 +169,52 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
   },
   rowDone: { opacity: 0.7 },
+  // Raio interno = externo − padding (regra 14).
   monster: {
-    width: 44,
-    height: 44,
-    borderRadius: radius.md,
-    backgroundColor: colors.bgSoft,
+    width: 60,
+    height: 60,
+    borderRadius: radius.lg - space.md,
     alignItems: 'center',
     justifyContent: 'center',
     alignSelf: 'flex-start',
   },
   copy: { flex: 1, minWidth: 0 },
-  title: { fontSize: 15, fontWeight: '700', color: colors.text },
+  title: { fontSize: 16, fontWeight: '800', color: colors.text },
   titleDone: { textDecorationLine: 'line-through', color: colors.textMuted },
-  meta: { marginTop: space.xs + 2, fontSize: 12, color: colors.textMuted },
+  metaRow: {
+    marginTop: space.xs + 2,
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: space.sm,
+  },
+  meta: { fontSize: 12, color: colors.textMuted },
+  xpPill: {
+    paddingHorizontal: space.sm,
+    paddingVertical: 2,
+    borderRadius: radius.pill,
+    overflow: 'hidden',
+    backgroundColor: 'rgba(245, 158, 11, 0.16)',
+    color: colors.amberSoft,
+    fontSize: 12,
+    fontWeight: '800',
+    fontVariant: ['tabular-nums'],
+  },
   waiting: { marginTop: space.xs + 2, fontSize: 12, fontWeight: '700', color: colors.amberSoft },
-  rowActions: { flexDirection: 'row', gap: space.lg, marginTop: space.xs },
+  top: { flexDirection: 'row', alignItems: 'flex-start', gap: space.md },
+  bottom: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.lg,
+    paddingLeft: 60 + space.md,
+    paddingRight: space.xs,
+  },
   linkBtn: { minHeight: 44, justifyContent: 'center' },
   linkText: { fontSize: 13, fontWeight: '700', color: colors.amberSoft },
   completeBtn: {
+    marginLeft: 'auto',
     minHeight: 44,
-    minWidth: 64,
+    minWidth: 96,
     paddingHorizontal: 12,
     borderRadius: 10,
     borderWidth: 1,
@@ -190,7 +224,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   completeBtnWaiting: { backgroundColor: 'transparent' },
-  completeBtnText: { fontWeight: '800', color: colors.bg, fontSize: 13 },
+  completeBtnText: { fontWeight: '900', color: colors.bg, fontSize: 15 },
   completeBtnTextWaiting: { color: colors.amberSoft },
   doneBadge: {
     minWidth: 64,
@@ -200,8 +234,9 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
   deleteBtn: {
-    width: 44,
-    height: 44,
+    marginTop: -6,
+    width: 40,
+    height: 40,
     borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',

@@ -103,6 +103,18 @@ describe('sanitizeState', () => {
     assert.equal(state.quests[0].completedAt, undefined);
   });
 
+  it('save antigo sem a dica da batalha mostra a dica uma vez; o salvo é respeitado', () => {
+    const fresh = startJourney('Ana', 'MAGE');
+    assert.equal(fresh.settings.battleTutorialDone, false);
+    const raw = JSON.parse(JSON.stringify(fresh)) as { settings: Record<string, unknown> };
+    delete raw.settings.battleTutorialDone;
+    assert.equal(sanitizeState(raw)?.settings.battleTutorialDone, false);
+    raw.settings.battleTutorialDone = true;
+    assert.equal(sanitizeState(raw)?.settings.battleTutorialDone, true);
+    raw.settings.battleTutorialDone = 'sim';
+    assert.equal(sanitizeState(raw)?.settings.battleTutorialDone, false);
+  });
+
   it('corrige herói inválido: classe, nível, teto de XP', () => {
     const state = sanitizeState({
       onboardingDone: true,

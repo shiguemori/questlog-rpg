@@ -90,6 +90,8 @@ export interface PlayerSettings {
   streakShieldArmed: boolean;
   /** Dia em que o escudo foi gasto. No máximo um por mês. */
   streakShieldUsedOn: string | null;
+  /** Já viu a dica de como lutar (aparece na primeira batalha). */
+  battleTutorialDone: boolean;
 }
 
 export interface AppState {

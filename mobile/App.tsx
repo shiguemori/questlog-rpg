@@ -20,7 +20,8 @@ import {
 } from './src/domain/completeQuest';
 import { celebrationLine, weekShareText, UNDO_COMPLETION_MS } from './src/domain/engagement';
 import { newlyUnlockedAchievements, spendAttributePoint } from './src/domain/progression';
-import { battleSkillsFor, heroBonus } from './src/domain/talents';
+import { battleSkillsFor, heroBonus, TALENT_TIER_LEVEL } from './src/domain/talents';
+import { ATTRIBUTE_POINTS_PER_LEVEL } from './src/domain/constants';
 import {
   addQuest,
   clearCompletedQuests,
@@ -34,8 +35,6 @@ import { canArmStreakShield } from './src/domain/rewards';
 import {
   createInitialState,
   DEFAULT_HERO_NAME,
-  exportSaveJson,
-  importSaveJson,
   startJourney,
   updateHero,
 } from './src/domain/state';
@@ -57,6 +56,7 @@ import {
 import { syncDailyReminder } from './src/platform/reminder';
 import { playVictorySound } from './src/platform/sound';
 import { buildVictoryEvent, type QuestVictoryEvent } from './src/domain/victory';
+import { EVENT_STEP_MS, WINDUP_MS } from './src/components/battle/timing';
 import { announce, playHaptic, useReducedMotion } from './src/platform/feedback';
 import { OnboardingScreen } from './src/screens/OnboardingScreen';
 import { QuestLogScreen } from './src/screens/QuestLogScreen';
@@ -75,10 +75,38 @@ const LOAD_NOTICE: Record<LoadStatus, string | null> = {
 };
 
 const FEEDBACK_VISIBLE_MS = 4200;
-/** Pausa para ver o golpe do herói (animação e números) antes do monstro agir. */
+/** Pausa mínima para ver o golpe do herói (animação e números) antes do monstro agir. */
 const ENEMY_TURN_MS = 1000;
+/** Teto da pausa: golpes com muitos eventos não podem travar a luta. */
+const ENEMY_TURN_MAX_MS = 1700;
 /** Com "Reduzir movimento" não há animação, mas o texto ainda precisa ser lido. */
 const ENEMY_TURN_REDUCED_MS = 400;
+
+/** A pausa acompanha a animação: preparo + um passo por evento + o fim do efeito. */
+function enemyTurnDelay(eventCount: number): number {
+  const animation = WINDUP_MS + eventCount * EVENT_STEP_MS + 420;
+  return Math.min(ENEMY_TURN_MAX_MS, Math.max(ENEMY_TURN_MS, animation));
+}
+
+/** O que cada nível dá (mostrado no level up). */
+function levelUpRewards(): { value: string; label: string }[] {
+  return [
+    { value: `+${ATTRIBUTE_POINTS_PER_LEVEL}`, label: 'pontos de atributo' },
+    { value: '+1', label: 'ponto de talento' },
+  ];
+}
+
+/** Camada nova da árvore de talentos que abriu exatamente neste nível. */
+function levelUpUnlock(level: number | null): string | null {
+  if (level == null) return null;
+  const tier = (Object.entries(TALENT_TIER_LEVEL) as [string, number][]).find(
+    ([, minLevel]) => minLevel === level,
+  );
+  if (!tier) return null;
+  return tier[0] === '1'
+    ? 'A árvore de talentos abriu. Escolha seu primeiro talento.'
+    : `Talentos da camada ${tier[0]} liberados na árvore.`;
+}
 
 function vitalsLine(character: AppState['character'], now: Date): string {
   const hp = currentHeroHp(character, now);
@@ -111,6 +139,7 @@ export function QuestLogApp({ store = stateStore }: QuestLogAppProps) {
   const [state, setState] = useState<AppState | null>(null);
   const [storageNotice, setStorageNotice] = useState<string | null>(null);
   const [levelUpLevel, setLevelUpLevel] = useState<number | null>(null);
+  const [heroRequest, setHeroRequest] = useState(0);
   const [victoryEvent, setVictoryEvent] = useState<QuestVictoryEvent | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [undoState, setUndoState] = useState<AppState | null>(null);
@@ -321,7 +350,9 @@ export function QuestLogApp({ store = stateStore }: QuestLogAppProps) {
         setSession(updated);
         if (after.phase === 'ENEMY_TURN') scheduleRef.current();
       },
-      reduceMotion ? ENEMY_TURN_REDUCED_MS : ENEMY_TURN_MS,
+      reduceMotion
+        ? ENEMY_TURN_REDUCED_MS
+        : enemyTurnDelay(sessionRef.current?.battle.events.length ?? 0),
     );
   }, [clearEnemyTimer, reduceMotion, resolveBattle]);
   useEffect(() => {
@@ -503,27 +534,6 @@ export function QuestLogApp({ store = stateStore }: QuestLogAppProps) {
     });
   }, []);
 
-  const handleImport = useCallback(
-    (raw: string) => {
-      const result = importSaveJson(raw);
-      if (!result.ok) return result.message;
-      clearUndo();
-      clearBattle();
-      setVictoryEvent(null);
-      setLevelUpLevel(null);
-      setState(result.state);
-      setFeedback('Save importado neste aparelho.');
-      return null;
-    },
-    [clearUndo, clearBattle],
-  );
-
-  const handleExport = useCallback(async () => {
-    const current = stateRef.current;
-    if (!current) return;
-    await Share.share({ message: exportSaveJson(current) });
-  }, []);
-
   const handleShareWeek = useCallback(async () => {
     const current = stateRef.current;
     if (!current) return;
@@ -633,14 +643,11 @@ export function QuestLogApp({ store = stateStore }: QuestLogAppProps) {
           onChangeClass={handleChangeClass}
           onPatchSettings={patchSettings}
           onToggleShield={handleToggleShield}
-          onImportSave={handleImport}
-          onExportSave={() => {
-            void handleExport();
-          }}
           onShareWeek={() => {
             void handleShareWeek();
           }}
           onCalendarDay={handleCalendarDay}
+          heroRequest={heroRequest}
         />
       ) : (
         <OnboardingScreen onComplete={handleOnboarding} />
@@ -652,6 +659,9 @@ export function QuestLogApp({ store = stateStore }: QuestLogAppProps) {
           onMove={handlePlayerMove}
           onDismiss={dismissBattle}
           onUndo={undoState ? handleUndo : undefined}
+          soundEnabled={state?.settings.soundEnabled ?? false}
+          showTutorial={state ? !state.settings.battleTutorialDone : false}
+          onTutorialDone={() => patchSettings({ battleTutorialDone: true })}
         />
       ) : null}
       <VillainDefeatOverlay
@@ -663,7 +673,14 @@ export function QuestLogApp({ store = stateStore }: QuestLogAppProps) {
         visible={levelUpLevel != null}
         level={levelUpLevel ?? state.character.level}
         heroName={state.character.name || DEFAULT_HERO_NAME}
+        assetKey={`hero.${state.character.characterClass.toLowerCase()}`}
+        rewards={levelUpRewards()}
+        unlockLine={levelUpUnlock(levelUpLevel)}
         onDismiss={() => setLevelUpLevel(null)}
+        onOpenHero={() => {
+          setLevelUpLevel(null);
+          setHeroRequest((value) => value + 1);
+        }}
         onUndo={undoState ? handleUndo : undefined}
       />
     </>

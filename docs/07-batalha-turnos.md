@@ -98,15 +98,17 @@ Regras em `mobile/src/domain/talents.ts`; telas nas abas Talentos e Golpes da fo
 
 ## Monstros por categoria
 
-A vida (30 / 46 / 64) e os atributos vêm da dificuldade e sobem com o nível do herói (+5 de vida por nível).
+A vida (30 / 46 / 50) e os atributos vêm da dificuldade e sobem com o nível do herói: +7 de vida por nível, e +1 em força e inteligência a cada `ENEMY_LEVEL_STEP` níveis (fácil 2, médio 1,5, difícil 1). A vitalidade sobe na metade desse ritmo, para a defesa não punir só os golpes físicos.
 
-| Categoria | Monstro | Golpes |
-|-----------|---------|--------|
-| Estudo | Distração (celular) | Notificação, Rolagem Infinita (cansado), Abas Novas (2 golpes), Modo Soneca (cura) |
-| Trabalho | Caos (tornado) | Urgência, Reunião Surpresa (trava), Prazo Apertado (estresse), Hora Extra (animado) |
-| Saúde | Preguiça (no sofá) | Sofá Macio, Soneca (descansa), Desculpa Pronta (escudo), Peso nas Pernas (cansado) |
-| Casa | Bagunça (pilha) | Pilha de Roupa, Poeira (alergia), Avalanche (pesado), Debaixo do Tapete (esquiva) |
-| Outro | Sombra (fantasma) | Garra Sombria, Sussurro (cansado), Drenar (rouba vida), Névoa (esquiva) |
+| Categoria | Monstro | Golpes | Jeito próprio (`ENEMY_TRAITS`) |
+|-----------|---------|--------|--------------------------------|
+| Estudo | Distração (celular) | Notificação, Rolagem Infinita (cansado), Abas Novas (2 golpes), Modo Soneca (cura) | **Mais abas:** com metade da vida, +30% de dano por 2 turnos, uma vez |
+| Trabalho | Caos (tornado) | Urgência, Reunião Surpresa (trava), Prazo Apertado (estresse), Hora Extra (animado) | **Acumula:** +10% de dano a cada turno dele, até +40% |
+| Saúde | Preguiça (no sofá) | Sofá Macio, Soneca (descansa), Desculpa Pronta (escudo), Peso nas Pernas (cansado) | **Espreguiça:** se o golpe do herói não causou dano, recupera 8% da vida |
+| Casa | Bagunça (pilha) | Pilha de Roupa, Poeira (alergia), Avalanche (pesado), Debaixo do Tapete (esquiva) | **A pilha cresce:** a cada 3 turnos ganha escudo de 12% da vida máxima |
+| Outro | Sombra (fantasma) | Garra Sombria, Sussurro (cansado), Drenar (rouba vida), Névoa (esquiva) | **Some de vista:** com metade da vida, esquiva o próximo golpe, uma vez |
+
+O jeito age no começo do turno do monstro (`applyEnemyTrait`), vira um evento `TRAIT` (texto "JEITO DO MONSTRO" em cima dele) e aparece na placa do monstro. Muda a melhor jogada de cada luta: contra o Caos, termine rápido; contra a Preguiça, não fique só defendendo.
 
 IA (não aparece na tela): com ≤45% de vida prefere cura/escudo; em turnos alternados aplica um status que o herói ainda não tem; no resto usa o golpe mais forte disponível. O cartão de cada quest mostra o monstro da categoria.
 
@@ -125,24 +127,33 @@ Crítico e esquiva usam um gerador com semente (`mulberry32`) guardado no estado
 
 ## Balanceamento
 
-Simulação com 200 lutas por classe e dificuldade, nível 1, vida cheia:
+`npx tsx scripts/simulate-battles.ts` (em `mobile/`) roda 300 lutas por classe × monstro × dificuldade × nível (1, 3, 5, 8). O herói simulado usa o golpe de mais dano e, com pouca vida, cura ou escudo; atributos e talentos seguem uma build comum. Vitórias depois do ajuste de 13/11/2026:
 
-| | Fácil | Médio | Difícil |
-|-|-------|-------|---------|
-| Só ataque grátis | 100% | 34–90% | 0–2% |
-| Com estratégia | 100% | 100% | 63–82% |
+| | Nível 1 | Nível 3 | Nível 5 | Nível 8 |
+|-|---------|---------|---------|---------|
+| Fácil | 100% | 100% | 100% | 100% |
+| Médio | 66–100% | 99–100% | 99–100% | 96–100% |
+| Difícil | 23–100% | 81–100% | 58–100% | 40–100% |
+
+O que mudou nesse ajuste: difícil começa mais baixo (vida 50, atributos 4) e sobe a cada nível; o Ladino ganhou esquiva +10 (passiva), Atalho mais forte e que rouba 25% do dano, e Lembrete Chato incomoda mais; Lista Riscada e Avalanche bateram um pouco menos. Pontos fracos que ficam por escolha: Ladino contra Distração (dano mental, a esquiva não ajuda) e Guerreiro contra Caos (o dano acumulado pune lutas longas). O jogador real usa Respirar Fundo e escudo; o simulado não, então os números reais tendem a ser melhores.
 
 ## Arte e efeitos
 
 - Heróis são pessoas comuns: Guerreiro de bandana com vassoura e tampa de panela, Mago estudante de óculos com café e agenda, Ladino de boné, moletom e mochila.
 - Personagens modelados no Blender por código (formas estilizadas, sombreamento toon em 3 faixas, contraluz e contorno de casco invertido). Fonte: `assets/blender/sources/battle-characters.blend`; o script do kit está no texto `qlkit` dentro do arquivo.
-- Renders 1024×1024 com fundo transparente em `mobile/assets/battle/` (`hero-*.png`, `enemy-*.png`), ligados por `CharacterArt` pelo `assetKey`. Heróis olham para a direita, monstros para a esquerda. O avatar do herói e o cartão de cada quest usam os mesmos retratos.
-- Cenários: 5 dioramas 3D no mesmo estilo (quarto de estudo, escritório, sala, quarto bagunçado, floresta à noite), renderizados em 1080×1080 e salvos como `mobile/assets/battle/arena-*.jpg` (~25 KB cada). A arena escolhe pelo monstro e põe um véu escuro leve por cima.
-- Objetos dos golpes: cada habilidade do herói tem um objeto modelado no Blender (vassoura, chinelo, post-it, café, avião de papel, banana…), renderizado em 384×384 em `mobile/assets/battle/skills/*.png` (raízes `prop_*` no `.blend`). Na luta o objeto faz um movimento próprio (`SkillCast.tsx`: arco, golpe girando, cai do alto, gruda, esmaga, chove, sobe, escudo). O mesmo ícone aparece no botão, no detalhe, no loadout e na árvore.
+- Renders 1024×1024 com fundo transparente em `mobile/assets/battle/` (`hero-*.png`, `enemy-*.png`), ligados por `CharacterArt` pelo `assetKey`. Heróis olham para a direita, monstros para a esquerda. O topo da tela principal, a folha do herói, o level up e o cartão de cada quest usam os mesmos retratos.
+- **Cenários (v2):** 5 cômodos inteiros com luz de verdade: quarto de estudo à noite (estante, janela com lua, varal de luzinhas, escrivaninha com notebook e luminária), escritório no pôr do sol (janelão com prédios, dois monitores, pilhas de papel), academia em casa de manhã (sol entrando, tapete de yoga, halteres), cozinha à tarde (pia com louça, geladeira com ímãs, cesto de roupa) e parque à noite (pinheiros, poste, vaga-lumes). Materiais com luz (Principled), EEVEE com sombras e raytracing, brilho no compositor e AgX. Kit no texto `qlkit2` do `.blend`, raízes `arena2_*`, função `arena_render`. Saída 1080×1350 JPEG (~100–130 KB) em `mobile/assets/battle/arena-*.jpg`.
+- **Tela da luta:** a arena vai de ponta a ponta até o topo, com degradê escuro em cima (para a placa do monstro) e embaixo (para fundir com o painel). Em cima: placa do monstro (nome, vida com marcas a cada 10, nível, jeito próprio, status) e o turno. Embaixo: legenda da ação, barra do herói (vida e energia lado a lado) e os 6 golpes em cartões com ícone grande, custo no canto do ícone e recarga em cima do ícone. O painel reserva 352 de altura; a arena fica com o resto (300–560). Personagens: herói até 220, monstro 6% maior.
+- **Golpe do herói:** recua e encolhe (preparo, 150 ms), estica no avanço, o objeto do golpe sai com rastro (`SkillCast.tsx`), e no alvo: clarão, onda de choque, linhas de impacto e partículas no padrão do elemento (estouro, faíscas que sobem, cacos de gelo, bolhas, fumaça, anel). O alvo pisca branco (cópia da silhueta com `tintColor`), recua e achata. Crítico: tudo maior, número com "CRÍTICO", clarão na arena inteira e tremida.
+- **Escudo** vira uma bolha em volta do lutador enquanto durar. **Travado** mostra estrelinhas girando. Cura e bônus dão um brilho verde. Sombra no chão acompanha pulos e investidas.
+- **Começo e fim:** faixa "Fulano apareceu!" cruza a arena; monstro desce e herói entra pela esquerda. O resultado espera a última animação; na vitória, raios girando, confete e o XP contando.
+- **Som e vibração** (`platform/battleCues.ts`): sons curtos gerados por código em `mobile/assets/sfx/` (golpe, crítico, cura, escudo, deslocamento). Vibração leve ao bater, média ao apanhar, forte no crítico. Som só com Ajustes → Som ligado.
+- **Primeira luta:** dica "Como lutar" (3 linhas) até a pessoa usar um golpe ou tocar em Entendi (`settings.battleTutorialDone`).
+- **Level up:** retrato do herói pulando, o nível grande, o que ganhou (+2 atributos, +1 talento), a camada nova da árvore quando abre, confete, e "Usar os pontos" abre a folha do herói.
+- O turno do monstro espera a animação do herói: `1000 ms` até `1700 ms`, conforme o número de eventos.
 - Segurar um golpe abre o detalhe com o texto inteiro, custo, recarga e o efeito de agora. Funciona com o golpe bloqueado.
-- Layout: a arena usa a altura que sobra depois de reservar ~370 para cabeçalho, log e as 3 linhas de habilidades (entre 260 e 540). Os personagens crescem com a arena (40% da altura, entre 100 e 184). As células de habilidade não usam `flex: 1` (isso zerava a altura e empilhava os botões). O rodapé respeita a barra do Android (mínimo 24).
-- Na arena: respiração parada, investida ao atacar, tremida e piscada ao apanhar, desvio, nocaute, partículas por tipo de efeito, números flutuando, tremida da tela no crítico e barra de vida com rastro.
-- "Reduzir movimento" desliga deslocamentos e partículas; números e textos continuam.
+- "Reduzir movimento" desliga deslocamentos, partículas, objetos e confete; números e textos continuam.
+- Preview no navegador: `npx expo start --web` (o projeto tem `react-native-web`). Serve para ver layout; animações e sombras de verdade só no aparelho.
 
 ## XP
 
@@ -162,7 +173,7 @@ npm install
 npx expo start -c
 ```
 
-- Fácil com o ataque grátis → vence. Difícil só com ataque grátis → quase sempre perde.
+- Fácil com o ataque grátis → vence. Difícil no nível 1 pede estratégia (escudo, Respirar Fundo).
 - Segure um golpe para ler o que ele faz. Use Respirar Fundo ou escudo quando a vida cair.
 - No nível 2, abra a folha do herói → Talentos e aprenda o primeiro talento; em Golpes, troque o que vai para a luta.
 - Depois da luta, a vida na tela principal fica como terminou e sobe com o tempo.

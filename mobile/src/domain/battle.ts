@@ -123,6 +123,63 @@ export interface BattleActor {
   skills: readonly BattleSkill[];
   /** Hook de arte. Ex.: `hero.mage`, `enemy.study`. */
   assetKey: string;
+  /** Só monstros: o jeito próprio de lutar (ver `ENEMY_TRAITS`). */
+  trait?: EnemyTraitId;
+  /** O traço que age uma vez por luta já agiu. */
+  traitUsed?: boolean;
+}
+
+/**
+ * Cada monstro tem um jeito próprio de lutar, que a placa mostra e o motor aplica
+ * no começo do turno dele. Muda a melhor estratégia de cada luta.
+ */
+export type EnemyTraitId = 'MORE_TABS' | 'PILE_UP' | 'LAZY_REGEN' | 'GROWS' | 'VANISH';
+
+export interface EnemyTrait {
+  id: EnemyTraitId;
+  name: string;
+  /** Linha curta da placa. */
+  hint: string;
+  /** Explicação completa (leitor de tela e detalhe). */
+  blurb: string;
+}
+
+export const ENEMY_TRAITS: Record<Category, EnemyTrait> = {
+  STUDY: {
+    id: 'MORE_TABS',
+    name: 'Mais abas',
+    hint: 'Fica mais forte na metade da vida',
+    blurb: 'Com metade da vida, abre mais abas: +30% de dano por 2 turnos, uma vez por luta.',
+  },
+  WORK: {
+    id: 'PILE_UP',
+    name: 'Acumula',
+    hint: '+10% de dano a cada turno',
+    blurb: 'Cada turno que passa, o trabalho acumula: +10% de dano, até +40%. Termine rápido.',
+  },
+  HEALTH: {
+    id: 'LAZY_REGEN',
+    name: 'Espreguiça',
+    hint: 'Se cura se você não atacar',
+    blurb: 'Se o seu golpe não causar dano, a Preguiça recupera 8% da vida no turno dela.',
+  },
+  HOME: {
+    id: 'GROWS',
+    name: 'A pilha cresce',
+    hint: 'Ganha escudo a cada 3 turnos',
+    blurb: 'A cada 3 turnos, a pilha cresce e ganha escudo de 12% da vida máxima.',
+  },
+  OTHER: {
+    id: 'VANISH',
+    name: 'Some de vista',
+    hint: 'Esquiva um golpe na metade da vida',
+    blurb: 'Com metade da vida, some de vista e esquiva o próximo golpe, uma vez por luta.',
+  },
+};
+
+export function enemyTraitOf(actor: BattleActor): EnemyTrait | null {
+  if (!actor.trait) return null;
+  return Object.values(ENEMY_TRAITS).find((entry) => entry.id === actor.trait) ?? null;
 }
 
 export interface BattleLogEntry {
@@ -131,7 +188,17 @@ export interface BattleLogEntry {
 }
 
 export type BattleEventKind =
-  'CAST' | 'DAMAGE' | 'MISS' | 'HEAL' | 'SHIELD' | 'STATUS' | 'TICK' | 'SKIP' | 'KO';
+  | 'CAST'
+  | 'DAMAGE'
+  | 'MISS'
+  | 'HEAL'
+  | 'SHIELD'
+  | 'STATUS'
+  | 'TICK'
+  | 'SKIP'
+  | 'KO'
+  /** O jeito próprio do monstro agiu (ver `ENEMY_TRAITS`). `skillName` traz o nome. */
+  | 'TRAIT';
 
 /** O que a tela anima depois de cada ação. `seq` cresce sempre. */
 export interface BattleEvent {
@@ -239,9 +306,15 @@ export const CLASS_ENERGY_LABEL: Record<CharacterClass, string> = {
 export const ENEMY_SCALE: Record<Difficulty, { hp: number; attributes: Attributes }> = {
   EASY: { hp: 30, attributes: { strength: 2, intelligence: 2, agility: 2, vitality: 2 } },
   MEDIUM: { hp: 46, attributes: { strength: 4, intelligence: 4, agility: 3, vitality: 3 } },
-  HARD: { hp: 64, attributes: { strength: 6, intelligence: 6, agility: 4, vitality: 5 } },
+  HARD: { hp: 50, attributes: { strength: 4, intelligence: 4, agility: 4, vitality: 4 } },
 };
-export const ENEMY_HP_PER_LEVEL = 5;
+export const ENEMY_HP_PER_LEVEL = 7;
+/**
+ * A cada quantos níveis do herói o monstro ganha +1 em força, inteligência e vitalidade.
+ * O difícil começa mais baixo e sobe mais rápido: dá para vencer no nível 1 e segue
+ * exigindo estratégia depois (ver `scripts/simulate-battles.ts`).
+ */
+export const ENEMY_LEVEL_STEP: Record<Difficulty, number> = { EASY: 2, MEDIUM: 1.5, HARD: 1 };
 
 const HERO_ASSET: Record<CharacterClass, string> = {
   WARRIOR: 'hero.warrior',
@@ -415,7 +488,7 @@ export const HERO_SKILLS: Record<CharacterClass, readonly BattleSkill[]> = {
       cooldown: 3,
       scaling: 'intelligence',
       power: 7,
-      ratio: 1.4,
+      ratio: 1.25,
       bonus: { when: 'TARGET_BURNING', multiplier: 1.5 },
       fx: 'ARCANE',
     }),
@@ -425,14 +498,15 @@ export const HERO_SKILLS: Record<CharacterClass, readonly BattleSkill[]> = {
     skill({
       id: 'rogue.stab',
       name: 'Atalho',
-      tag: 'Dano físico · +15% crítico',
+      tag: '+15% crítico · rouba vida',
       blurb:
-        'Acha o caminho mais curto: 15 pontos a mais de chance de crítico. Escala com Agilidade.',
+        'Acha o caminho mais curto: 15 pontos a mais de chance de crítico e recupera 25% do dano como vida. Escala com Agilidade.',
       kind: 'PHYSICAL',
       scaling: 'agility',
-      power: 4,
+      power: 6,
       ratio: 1.0,
       critBonus: 15,
+      drain: 0.25,
       fx: 'SLASH',
     }),
     skill({
@@ -445,7 +519,7 @@ export const HERO_SKILLS: Record<CharacterClass, readonly BattleSkill[]> = {
       scaling: 'agility',
       power: 3,
       ratio: 0.6,
-      applies: [{ status: 'POISON', target: 'TARGET', turns: 3, potency: 3, potencyRatio: 0.4 }],
+      applies: [{ status: 'POISON', target: 'TARGET', turns: 3, potency: 3, potencyRatio: 0.6 }],
       fx: 'POISON',
     }),
     skill({
@@ -858,8 +932,8 @@ export const ENEMY_SKILLS: Record<Category, readonly BattleSkill[]> = {
       kind: 'PHYSICAL',
       cooldown: 3,
       scaling: 'strength',
-      power: 8,
-      ratio: 1.4,
+      power: 7,
+      ratio: 1.2,
       fx: 'IMPACT',
     }),
     skill({
@@ -967,18 +1041,27 @@ export function heroBattleStats(character: Character): {
     attack: attributes[CLASS_OFFENSE[character.characterClass]],
     defense: defenseFor(attributes),
     critChance: critChanceFor(attributes),
-    dodgeChance: dodgeChanceFor(attributes),
+    // Ladino: sabe sair de fininho (+10 de esquiva, teto 35%).
+    dodgeChance:
+      character.characterClass === 'ROGUE'
+        ? Math.min(ROGUE_DODGE_CAP, dodgeChanceFor(attributes) + ROGUE_DODGE_BONUS)
+        : dodgeChanceFor(attributes),
   };
 }
 
+/** Passiva do Ladino: esquiva extra de golpe físico. */
+export const ROGUE_DODGE_BONUS = 10;
+const ROGUE_DODGE_CAP = 35;
+
 export function enemyAttributes(difficulty: Difficulty, heroLevel: number): Attributes {
   const base = ENEMY_SCALE[difficulty].attributes;
-  const bump = Math.floor(Math.max(0, heroLevel - 1) / 2);
+  const bump = Math.floor(Math.max(0, heroLevel - 1) / ENEMY_LEVEL_STEP[difficulty]);
   return {
     strength: base.strength + bump,
     intelligence: base.intelligence + bump,
     agility: base.agility,
-    vitality: base.vitality + bump,
+    // Vitalidade sobe na metade do ritmo: defesa alta demais pune só os golpes físicos.
+    vitality: base.vitality + Math.floor(bump / 2),
   };
 }
 
@@ -1284,6 +1367,73 @@ function startOfTurn(draft: Draft, side: BattleSide): void {
   }
 }
 
+function traitEvent(draft: Draft, trait: EnemyTrait, fx: FxKind): void {
+  emit(draft, { kind: 'TRAIT', target: 'ENEMY', source: 'ENEMY', fx, skillName: trait.name });
+}
+
+/**
+ * Jeito próprio do monstro, no começo do turno dele.
+ * `previous` são os eventos da ação do herói (para saber se ele causou dano).
+ */
+function applyEnemyTrait(draft: Draft, previous: readonly BattleEvent[], enemyTurns: number): void {
+  const enemy = draft.state.enemy;
+  const trait = enemyTraitOf(enemy);
+  if (!trait || enemy.hp <= 0) return;
+  const half = enemy.hp <= enemy.maxHp / 2;
+  switch (trait.id) {
+    case 'MORE_TABS': {
+      if (enemy.traitUsed || !half) return;
+      draft.state = withActor(draft.state, {
+        ...addStatus(enemy, { id: 'EMPOWER', turns: 3, potency: 30, stacks: 1 }),
+        traitUsed: true,
+      });
+      draft.lines.push(`${enemy.name} abriu mais abas: +30% de dano por 2 turnos.`);
+      traitEvent(draft, trait, 'BUFF');
+      return;
+    }
+    case 'PILE_UP': {
+      if (enemy.damageBonus >= 40) return;
+      draft.state = withActor(draft.state, {
+        ...enemy,
+        damageBonus: Math.min(40, enemy.damageBonus + 10),
+      });
+      draft.lines.push(
+        `O trabalho acumula: ${enemy.name} causa +${enemy.damageBonus + 10}% de dano.`,
+      );
+      traitEvent(draft, trait, 'BUFF');
+      return;
+    }
+    case 'LAZY_REGEN': {
+      const hit = previous.some((event) => event.kind === 'DAMAGE' && event.target === 'ENEMY');
+      if (hit || enemy.hp >= enemy.maxHp) return;
+      traitEvent(draft, trait, 'HEAL');
+      heal(draft, 'ENEMY', Math.max(1, Math.round(enemy.maxHp * 0.08)));
+      return;
+    }
+    case 'GROWS': {
+      if (enemyTurns % 3 !== 0) return;
+      const amount = Math.max(1, Math.round(enemy.maxHp * 0.12));
+      draft.state = withActor(draft.state, { ...enemy, shield: enemy.shield + amount });
+      draft.lines.push(`A pilha cresceu: ${enemy.name} ganha escudo de ${amount}.`);
+      traitEvent(draft, trait, 'SHIELD');
+      emit(draft, { kind: 'SHIELD', target: 'ENEMY', source: 'ENEMY', amount, fx: 'SHIELD' });
+      return;
+    }
+    case 'VANISH': {
+      if (enemy.traitUsed || !half) return;
+      draft.state = withActor(draft.state, {
+        ...addStatus(enemy, { id: 'EVADE', turns: 2, potency: 0, stacks: 1 }),
+        traitUsed: true,
+      });
+      draft.lines.push(`${enemy.name} some de vista: vai esquivar o próximo golpe.`);
+      traitEvent(draft, trait, 'SHADOW');
+      return;
+    }
+    default:
+      return;
+  }
+}
+
 /** Fim do turno: status e recargas andam um passo. */
 function endOfTurn(draft: Draft, side: BattleSide): void {
   const actor = actorOf(draft.state, side);
@@ -1425,6 +1575,7 @@ export function startBattle(input: StartBattleInput): BattleState {
     cooldowns: {},
     skills: ENEMY_SKILLS[input.category],
     assetKey: ENEMY_ASSET[input.category],
+    trait: ENEMY_TRAITS[input.category].id,
   };
 
   const opening: BattleState = {
@@ -1483,6 +1634,8 @@ export function applyEnemyMove(state: BattleState): BattleState {
     emit(draft, { kind: 'KO', target: 'ENEMY', source: 'PLAYER' });
     return finish(state, draft, key, { phase: 'VICTORY', enemyTurns });
   }
+
+  applyEnemyTrait(draft, state.events, enemyTurns);
 
   if (hasStatus(draft.state.enemy, 'STUN')) {
     draft.state = { ...draft.state, enemy: removeStatus(draft.state.enemy, 'STUN') };

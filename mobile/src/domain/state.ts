@@ -29,6 +29,7 @@ export function defaultPlayerSettings(): PlayerSettings {
     dismissedReturnGap: null,
     streakShieldArmed: false,
     streakShieldUsedOn: null,
+    battleTutorialDone: false,
   };
 }
 
@@ -197,6 +198,7 @@ function sanitizeSettings(raw: unknown): PlayerSettings {
     dismissedReturnGap: toIsoDay(raw.dismissedReturnGap),
     streakShieldArmed: raw.streakShieldArmed === true,
     streakShieldUsedOn: toIsoDay(raw.streakShieldUsedOn),
+    battleTutorialDone: raw.battleTutorialDone === true,
   };
 }
 

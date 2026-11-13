@@ -32,6 +32,7 @@ function WeekStripBase({ days, today }: WeekStripProps) {
             accessibilityElementsHidden
           >
             <Text style={[styles.label, cell.done && styles.labelDone]}>{cell.label}</Text>
+            <View style={[styles.dot, cell.done && styles.dotDone]} />
           </View>
         ))}
       </View>
@@ -54,17 +55,26 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row', gap: 6 },
   cell: {
     flex: 1,
-    minHeight: 32,
-    borderRadius: 8,
+    minHeight: 46,
+    borderRadius: 10,
     borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: colors.bgElevated,
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 6,
   },
-  cellDone: { backgroundColor: colors.amberWash, borderColor: colors.amber },
-  cellToday: { borderColor: colors.amberSoft },
-  label: { fontSize: 10, fontWeight: '700', color: colors.textDim },
+  cellDone: { backgroundColor: 'rgba(245, 158, 11, 0.16)', borderColor: colors.amberDeep },
+  cellToday: { borderColor: colors.amberSoft, borderWidth: 2 },
+  label: { fontSize: 11, fontWeight: '700', color: colors.textMuted },
   labelDone: { color: colors.amberSoft },
+  dot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    borderWidth: 1.5,
+    borderColor: colors.borderStrong,
+  },
+  dotDone: { backgroundColor: colors.amber, borderColor: colors.amber },
   pace: { fontSize: 12, lineHeight: 17, color: colors.textMuted },
 });

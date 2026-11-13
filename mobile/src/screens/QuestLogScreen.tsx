@@ -1,8 +1,19 @@
 import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, Pressable, ScrollView, SectionList, StyleSheet, Text, View } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import {
+  Alert,
+  Image,
+  type ImageSourcePropType,
+  Pressable,
+  ScrollView,
+  SectionList,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PressScale } from '../motion/PressScale';
-import { HeroAvatar } from '../components/HeroAvatar';
+import { CharacterArt } from '../components/CharacterArt';
 import { HeroSheet } from '../components/HeroSheet';
 import { HeroVitalsBar } from '../components/HeroVitalsBar';
 import { QuestCreateModal } from '../components/QuestCreateModal';
@@ -34,6 +45,13 @@ import type {
 import { colors } from '../theme/colors';
 import { radius, space } from '../theme/spacing';
 
+/** Cenário atrás do herói no topo: o cômodo que combina com a classe. */
+const HERO_BACKDROP: Record<string, ImageSourcePropType> = {
+  WARRIOR: require('../../assets/battle/arena-health.jpg'),
+  MAGE: require('../../assets/battle/arena-study.jpg'),
+  ROGUE: require('../../assets/battle/arena-other.jpg'),
+};
+
 interface QuestLogScreenProps {
   state: AppState;
   feedback: string | null;
@@ -57,10 +75,10 @@ interface QuestLogScreenProps {
   onChangeClass: (characterClass: CharacterClass) => void;
   onPatchSettings: (partial: Partial<PlayerSettings>) => void;
   onToggleShield: () => void;
-  onImportSave: (raw: string) => string | null;
-  onExportSave: () => void;
   onShareWeek: () => void;
   onCalendarDay: () => void;
+  /** Muda de valor para abrir a folha do herói (ex.: "Usar os pontos" do level up). */
+  heroRequest?: number;
 }
 
 interface QuestSection {
@@ -93,10 +111,9 @@ export function QuestLogScreen({
   onChangeClass,
   onPatchSettings,
   onToggleShield,
-  onImportSave,
-  onExportSave,
   onShareWeek,
   onCalendarDay,
+  heroRequest = 0,
 }: QuestLogScreenProps) {
   const insets = useSafeAreaInsets();
   const today = useLocalToday();
@@ -106,6 +123,12 @@ export function QuestLogScreen({
   const [filter, setFilter] = useState<CategoryFilter>('ALL');
   const [modalOpen, setModalOpen] = useState(false);
   const [heroOpen, setHeroOpen] = useState(false);
+  const [lastHeroRequest, setLastHeroRequest] = useState(heroRequest);
+  if (heroRequest !== lastHeroRequest) {
+    // Ajuste de estado durante o render (padrão do React para reagir a prop).
+    setLastHeroRequest(heroRequest);
+    if (heroRequest > 0) setHeroOpen(true);
+  }
   const [showAllDone, setShowAllDone] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
 
@@ -326,8 +349,20 @@ export function QuestLogScreen({
   };
 
   return (
-    <View style={[styles.screen, { paddingTop: insets.top }]}>
-      <View style={styles.heroBlock}>
+    <View style={styles.screen}>
+      <View style={[styles.heroBlock, { paddingTop: insets.top + space.md }]}>
+        <Image
+          source={HERO_BACKDROP[character.characterClass]}
+          style={styles.heroBackdrop}
+          resizeMode="cover"
+          accessibilityIgnoresInvertColors
+        />
+        <LinearGradient
+          colors={['rgba(15, 23, 42, 0.55)', 'rgba(15, 23, 42, 0.78)', colors.bg]}
+          locations={[0, 0.55, 1]}
+          style={styles.heroBackdrop}
+          pointerEvents="none"
+        />
         <Text style={styles.brand}>QuestLog</Text>
         <Pressable
           style={({ pressed }) => [styles.heroRow, pressed && styles.pressedSoft]}
@@ -338,11 +373,14 @@ export function QuestLogScreen({
             points > 0 ? `Você tem ${points} pontos de atributo para distribuir.` : undefined
           }
         >
-          <HeroAvatar
-            characterClass={character.characterClass}
-            initial={character.name}
-            size={64}
-          />
+          <View style={styles.heroStage}>
+            <View style={styles.heroShadow} />
+            <CharacterArt
+              assetKey={`hero.${character.characterClass.toLowerCase()}`}
+              size={96}
+              accessibilityLabel={`${classLabel} ${character.name}`}
+            />
+          </View>
           <View style={styles.heroCopy}>
             <Text style={styles.heroName} numberOfLines={2}>
               {character.name}
@@ -487,8 +525,6 @@ export function QuestLogScreen({
         onChangeClass={onChangeClass}
         onPatchSettings={onPatchSettings}
         onToggleShield={onToggleShield}
-        onImportSave={onImportSave}
-        onExportSave={onExportSave}
         onShareWeek={onShareWeek}
       />
     </View>
@@ -584,11 +620,21 @@ const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.bg },
   heroBlock: {
     paddingHorizontal: space.gutter,
-    paddingTop: space.md,
     paddingBottom: space.lg,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-    gap: space.lg,
+    gap: space.md,
+    overflow: 'hidden',
+  },
+  heroBackdrop: { ...StyleSheet.absoluteFill, width: '100%', height: '100%' },
+  heroStage: { width: 96, height: 96, alignItems: 'center', justifyContent: 'flex-end' },
+  heroShadow: {
+    position: 'absolute',
+    bottom: 2,
+    left: 18,
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: 'rgba(5, 8, 20, 0.55)',
+    transform: [{ scaleY: 0.18 }],
   },
   meters: { gap: space.md },
   habitBlock: { paddingHorizontal: space.gutter, paddingTop: space.lg, gap: space.md },
@@ -601,18 +647,18 @@ const styles = StyleSheet.create({
   },
   heroRow: {
     flexDirection: 'row',
-    gap: space.lg,
+    gap: space.md,
     alignItems: 'center',
-    minHeight: 64,
+    minHeight: 96,
   },
   heroCopy: { flex: 1, gap: space.xs },
   heroName: {
-    fontSize: 22,
+    fontSize: 26,
     fontWeight: '800',
     color: colors.text,
     letterSpacing: -0.3,
   },
-  heroMeta: { fontSize: 13, color: colors.textMuted },
+  heroMeta: { fontSize: 14, fontWeight: '600', color: '#CBD5E1' },
   profilePill: {
     minHeight: 32,
     paddingHorizontal: 12,
@@ -629,8 +675,8 @@ const styles = StyleSheet.create({
   statChip: {
     fontSize: 12,
     fontWeight: '700',
-    color: colors.textMuted,
-    backgroundColor: colors.bgElevated,
+    color: '#CBD5E1',
+    backgroundColor: 'rgba(30, 41, 59, 0.85)',
     borderRadius: radius.sm,
     paddingHorizontal: space.md,
     paddingVertical: 6,

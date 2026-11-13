@@ -90,6 +90,7 @@ export function TalentTree({ state, onHeroChange }: TalentTreeProps) {
                         styles.node,
                         learned && styles.nodeLearned,
                         open && styles.nodeOpen,
+                        !learned && !open && styles.nodeLocked,
                         isSelected && styles.nodeSelected,
                       ]}
                       accessibilityRole="button"
@@ -108,6 +109,13 @@ export function TalentTree({ state, onHeroChange }: TalentTreeProps) {
                       <Text style={styles.nodeName} numberOfLines={2}>
                         {node.name}
                       </Text>
+                      {learned ? (
+                        <View style={styles.mark}>
+                          <Text style={styles.markText}>✓</Text>
+                        </View>
+                      ) : open ? (
+                        <View style={[styles.mark, styles.markOpen]} />
+                      ) : null}
                     </Pressable>
                   </View>
                 );
@@ -164,7 +172,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   nodeWrap: { alignItems: 'center' },
-  link: { width: 3, height: space.md, backgroundColor: colors.border },
+  link: { width: 4, height: space.md, backgroundColor: colors.border },
   linkOn: { backgroundColor: colors.amber },
   node: {
     alignSelf: 'stretch',
@@ -179,9 +187,27 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: space.xs,
   },
-  nodeOpen: { borderColor: colors.amberDeep, backgroundColor: colors.bgElevated },
-  nodeLearned: { borderColor: colors.amber, backgroundColor: colors.amberWash },
-  nodeSelected: { borderWidth: 2, borderColor: colors.text },
+  nodeOpen: { borderWidth: 2, borderColor: colors.amber, backgroundColor: colors.bgElevated },
+  nodeLearned: {
+    borderWidth: 2,
+    borderColor: colors.amber,
+    backgroundColor: 'rgba(245, 158, 11, 0.22)',
+  },
+  nodeLocked: { opacity: 0.55 },
+  nodeSelected: { borderWidth: 2, borderColor: colors.text, opacity: 1 },
+  mark: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: colors.amber,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  markOpen: { width: 10, height: 10, borderRadius: 5, top: 8, right: 8 },
+  markText: { fontSize: 11, fontWeight: '900', color: colors.bg },
   dim: { opacity: 0.4 },
   badge: {
     fontSize: 18,

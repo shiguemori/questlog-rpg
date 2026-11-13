@@ -1,9 +1,9 @@
+import { LinearGradient } from 'expo-linear-gradient';
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Image,
   type ImageSourcePropType,
   Modal,
-  Pressable,
   StyleSheet,
   Text,
   useWindowDimensions,
@@ -16,17 +16,20 @@ import Animated, {
   withSequence,
   withTiming,
 } from 'react-native-reanimated';
+import { overshoot } from '../motion/easing';
 import {
   SafeAreaProvider,
   useSafeAreaInsets,
   type EdgeInsets,
 } from 'react-native-safe-area-context';
 import { MAX_BATTLE_TURNS, type BattleSkill, type BattleState } from '../domain/battle';
+import { useBattleCues } from '../platform/battleCues';
 import { useReducedMotion } from '../platform/feedback';
-import { colors } from '../theme/colors';
-import { radius, space } from '../theme/spacing';
-import { ActorCard, SkillDetail, SkillGrid } from './battle/BattleHud';
-import { ActorStage, EVENT_STEP_MS } from './battle/BattleStage';
+import { battle as tone, colors } from '../theme/colors';
+import { space } from '../theme/spacing';
+import { EnemyPlate, HeroBar, SkillDetail, SkillGrid, TurnPill } from './battle/BattleHud';
+import { BattleBanner, BattleResult, BattleTutorial, Confetti } from './battle/BattleMoments';
+import { ActorStage, EVENT_STEP_MS, WINDUP_MS } from './battle/BattleStage';
 import { SkillCastLayer } from './battle/SkillCast';
 
 export interface BattleRewardView {
@@ -43,11 +46,16 @@ export interface BattleOverlayProps {
   onMove: (moveId: string) => void;
   onDismiss: () => void;
   onUndo?: () => void;
+  /** Som de golpes (Ajustes → Som). */
+  soundEnabled?: boolean;
+  /** Primeira batalha: mostra como lutar até a pessoa agir ou dispensar. */
+  showTutorial?: boolean;
+  onTutorialDone?: () => void;
 }
 
 /**
- * Cenário da arena, pela categoria do monstro. Renderizados no Blender (1080×1080),
- * fonte em `assets/blender/sources/battle-characters.blend` (coleções `arena_*`).
+ * Cenário da arena, pela categoria do monstro. Renderizados no Blender (1080×1350),
+ * fonte em `assets/blender/sources/battle-characters.blend` (raízes `arena2_*`).
  */
 const ARENA: Record<string, ImageSourcePropType> = {
   'enemy.study': require('../../assets/battle/arena-study.jpg'),
@@ -56,6 +64,9 @@ const ARENA: Record<string, ImageSourcePropType> = {
   'enemy.home': require('../../assets/battle/arena-home.jpg'),
   'enemy.other': require('../../assets/battle/arena-other.jpg'),
 };
+
+/** Altura do painel de baixo: legenda, barra do herói, 3 linhas de golpes. */
+const PANEL_MIN = 352;
 
 export function BattleOverlay(props: BattleOverlayProps) {
   const { battle, reward, onDismiss } = props;
@@ -82,12 +93,20 @@ export function BattleOverlay(props: BattleOverlayProps) {
   );
 }
 
+/** Tempo até a última animação da ação terminar (para o resultado não atropelar). */
+function settleMs(battle: BattleState): number {
+  return WINDUP_MS + battle.events.length * EVENT_STEP_MS + 800;
+}
+
 function BattleScreen({
   battle,
   reward,
   onMove,
   onDismiss,
   onUndo,
+  soundEnabled = false,
+  showTutorial = false,
+  onTutorialDone,
   outerInsets,
 }: BattleOverlayProps & { battle: BattleState; outerInsets: EdgeInsets }) {
   const inner = useSafeAreaInsets();
@@ -100,73 +119,113 @@ function BattleScreen({
   const [inspected, setInspected] = useState<BattleSkill | null>(null);
   const reduceMotion = useReducedMotion();
   const arenaShake = useSharedValue(0);
-  const lastCrit = useRef(0);
-
-  const events = battle.events;
-  useEffect(() => {
-    if (reduceMotion) return;
-    const index = events.findIndex((event) => event.crit && event.seq > lastCrit.current);
-    if (index < 0) return;
-    lastCrit.current = events[index].seq;
-    // Reanimated: shared value mutável de propósito.
-
-    arenaShake.value = withDelay(
-      index * EVENT_STEP_MS + 90,
-      withSequence(
-        withTiming(-6, { duration: 40 }),
-        withTiming(6, { duration: 40 }),
-        withTiming(-3, { duration: 40 }),
-        withTiming(0, { duration: 40 }),
-      ),
-    );
-  }, [arenaShake, events, reduceMotion]);
-
-  const arenaStyle = useAnimatedStyle(() => ({ transform: [{ translateX: arenaShake.value }] }));
+  const critFlash = useSharedValue(0);
+  const entrance = useSharedValue(reduceMotion ? 1 : 0);
+  const lastShakeSeq = useRef(0);
 
   const finished = reward != null || battle.phase === 'VICTORY' || battle.phase === 'DEFEAT';
   const won = battle.phase === 'VICTORY';
   const waiting = !finished && battle.phase === 'ENEMY_TURN';
-  // A arena tem altura fixa: o resto da tela é das habilidades, que precisam caber inteiras.
-  // Habilidades (3 linhas), log e cabeçalho ocupam ~370; a arena fica com o resto.
-  const arenaHeight = Math.round(
-    Math.max(260, Math.min(540, height - insets.top - insets.bottom - 370)),
-  );
-  const heroSize = Math.round(Math.max(100, Math.min(184, arenaHeight * 0.4)));
-  const enemySize = Math.round(heroSize * 1.1);
-  // Centros dos lutadores na arena, para os objetos das habilidades voarem de um ao outro.
-  const arenaWidth = width - space.lg * 2;
+
+  // O resultado espera o último golpe terminar de animar.
+  const [revealed, setRevealed] = useState(false);
+  useEffect(() => {
+    if (!finished) return undefined;
+    const timer = setTimeout(() => setRevealed(true), reduceMotion ? 0 : settleMs(battle));
+    return () => clearTimeout(timer);
+    // Só quando a luta termina; os eventos finais já estão no estado.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [finished]);
+  const showResult = finished && revealed;
+
+  useBattleCues(battle.events, soundEnabled, reduceMotion);
+
+  useEffect(() => {
+    entrance.value = withTiming(1, {
+      duration: reduceMotion ? 0 : 520,
+      easing: overshoot(1.4),
+    });
+  }, [entrance, reduceMotion]);
+
+  // Tremor da arena: forte no crítico, leve quando o herói apanha.
+  const events = battle.events;
+  useEffect(() => {
+    if (reduceMotion) return;
+    const index = events.findIndex(
+      (event) =>
+        event.kind === 'DAMAGE' &&
+        event.seq > lastShakeSeq.current &&
+        (event.crit || event.target === 'PLAYER'),
+    );
+    if (index < 0) return;
+    const hit = events[index];
+    lastShakeSeq.current = events[events.length - 1].seq;
+    const at = WINDUP_MS + index * EVENT_STEP_MS + 70;
+    const amp = hit.crit ? 9 : 4;
+    arenaShake.value = withDelay(
+      at,
+      withSequence(
+        withTiming(-amp, { duration: 40 }),
+        withTiming(amp, { duration: 40 }),
+        withTiming(-amp / 2, { duration: 40 }),
+        withTiming(amp / 3, { duration: 40 }),
+        withTiming(0, { duration: 40 }),
+      ),
+    );
+    if (hit.crit) {
+      critFlash.value = withDelay(
+        at,
+        withSequence(withTiming(0.55, { duration: 50 }), withTiming(0, { duration: 260 })),
+      );
+    }
+  }, [arenaShake, critFlash, events, reduceMotion]);
+
+  const arenaStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: arenaShake.value }, { translateY: arenaShake.value * 0.4 }],
+  }));
+  const flashStyle = useAnimatedStyle(() => ({ opacity: critFlash.value }));
+  const enemyIn = useAnimatedStyle(() => ({
+    opacity: entrance.value,
+    transform: [{ translateY: (1 - entrance.value) * -40 }],
+  }));
+  const heroIn = useAnimatedStyle(() => ({
+    opacity: entrance.value,
+    transform: [{ translateX: (1 - entrance.value) * -60 }],
+  }));
+
+  // A arena vai até o topo da tela; o painel de baixo fica com o que precisa.
+  const arenaHeight = Math.round(Math.max(300, Math.min(560, height - insets.bottom - PANEL_MIN)));
+  const stageTop = insets.top + 64;
+  const stageHeight = arenaHeight - stageTop;
+  const heroSize = Math.round(Math.max(118, Math.min(220, stageHeight * 0.56, width * 0.46)));
+  const enemySize = Math.round(Math.min(heroSize * 1.06, width * 0.5));
+  const heroStage = { w: heroSize * 1.25, h: heroSize * 1.12 };
+  const enemyStage = { w: enemySize * 1.25, h: enemySize * 1.12 };
+  const heroPos = { left: width * 0.02, bottom: space.sm };
+  const enemyPos = {
+    right: width * 0.02,
+    top: stageTop + Math.max(0, stageHeight * 0.42 - enemyStage.h * 0.5),
+  };
+  // Centros dos lutadores, para os objetos das habilidades voarem de um ao outro.
   const heroCenter = {
-    x: space.md + (heroSize + 32) / 2,
-    y: arenaHeight - space.md - (heroSize + 28) / 2,
+    x: heroPos.left + heroStage.w / 2,
+    y: arenaHeight - heroPos.bottom - heroStage.h * 0.5,
   };
   const enemyCenter = {
-    x: arenaWidth - space.md - (enemySize + 32) / 2,
-    y: space.md + (enemySize + 28) / 2,
+    x: width - enemyPos.right - enemyStage.w / 2,
+    y: enemyPos.top + enemyStage.h * 0.55,
   };
   const arena = ARENA[battle.enemy.assetKey] ?? ARENA['enemy.other'];
   const lines = battle.log.filter((entry) => entry.text !== battle.victoryTitle).slice(-2);
   const turnShown = Math.min(MAX_BATTLE_TURNS, battle.turn + (finished ? 0 : 1));
+  const intro = battle.turn === 0 && battle.events.length === 0 && !finished;
+
+  const resultLines = [reward?.vitalsLine, reward?.habitLine].filter(
+    (line): line is string => typeof line === 'string' && line.length > 0,
+  );
 
   return (
-    <View
-      style={[
-        styles.screen,
-        { paddingTop: insets.top + space.md, paddingBottom: insets.bottom + space.lg },
-      ]}
-      accessibilityViewIsModal
-      testID="battle-overlay"
-    >
-      <View style={styles.header}>
-        <Text style={styles.turn}>
-          Turno {turnShown} de {MAX_BATTLE_TURNS}
-        </Text>
-        <View style={[styles.phase, waiting && styles.phaseEnemy, finished && styles.phaseDone]}>
-          <Text style={[styles.phaseText, !waiting && !finished && styles.phaseTextOnAmber]}>
-            {finished ? 'Fim da luta' : waiting ? `${battle.enemy.name} age` : 'Sua vez'}
-          </Text>
-        </View>
-      </View>
-
+    <View style={styles.screen} accessibilityViewIsModal testID="battle-overlay">
       <Animated.View style={[styles.arena, { height: arenaHeight }, arenaStyle]}>
         <Image
           source={arena}
@@ -174,9 +233,21 @@ function BattleScreen({
           resizeMode="cover"
           accessibilityIgnoresInvertColors
         />
-        <View style={styles.scrim} />
-        <View style={styles.enemyRow}>
-          <ActorCard actor={battle.enemy} reduceMotion={reduceMotion} />
+        <LinearGradient
+          colors={tone.scrimTop}
+          style={[styles.scrimTop, { height: insets.top + 110 }]}
+          pointerEvents="none"
+        />
+        <LinearGradient
+          colors={tone.scrimBottom}
+          locations={[0, 0.7, 1]}
+          style={styles.scrimBottom}
+          pointerEvents="none"
+        />
+
+        <Animated.View
+          style={[styles.fighter, { right: enemyPos.right, top: enemyPos.top }, enemyIn]}
+        >
           <ActorStage
             actor={battle.enemy}
             events={battle.events}
@@ -184,8 +255,10 @@ function BattleScreen({
             reduceMotion={reduceMotion}
             knockedOut={battle.enemy.hp <= 0}
           />
-        </View>
-        <View style={styles.heroRow}>
+        </Animated.View>
+        <Animated.View
+          style={[styles.fighter, { left: heroPos.left, bottom: heroPos.bottom }, heroIn]}
+        >
           <ActorStage
             actor={battle.hero}
             events={battle.events}
@@ -193,70 +266,80 @@ function BattleScreen({
             reduceMotion={reduceMotion}
             knockedOut={battle.hero.hp <= 0}
           />
-          <ActorCard actor={battle.hero} reduceMotion={reduceMotion} />
-        </View>
+        </Animated.View>
         <SkillCastLayer
           events={battle.events}
           hero={heroCenter}
           enemy={enemyCenter}
-          size={Math.round(heroSize * 0.55)}
+          size={Math.round(heroSize * 0.5)}
           reduceMotion={reduceMotion}
         />
-      </Animated.View>
 
-      <View style={styles.log} accessibilityLiveRegion="polite">
-        {lines.map((entry, index) => (
-          <Text
-            key={entry.id}
-            style={index === lines.length - 1 ? styles.logNow : styles.logPast}
-            numberOfLines={2}
-          >
-            {entry.text}
-          </Text>
-        ))}
-        {battle.turn === 0 && !finished ? (
-          <Text style={styles.logPast}>Segure um golpe para ler tudo o que ele faz.</Text>
-        ) : null}
-      </View>
-
-      {finished ? (
-        <View style={styles.result}>
-          <Text style={[styles.resultTitle, !won && styles.resultLost]}>
-            {won ? battle.victoryTitle : 'Você caiu'}
-          </Text>
-          <Text style={styles.resultXp}>{rewardCopy(won, reward)}</Text>
-          {reward?.vitalsLine ? <Text style={styles.resultLine}>{reward.vitalsLine}</Text> : null}
-          {reward?.habitLine ? <Text style={styles.habit}>{reward.habitLine}</Text> : null}
-          <Pressable
-            style={styles.cta}
-            onPress={onDismiss}
-            accessibilityRole="button"
-            accessibilityLabel="Fechar batalha"
-          >
-            <Text style={styles.ctaText}>Continuar</Text>
-          </Pressable>
-          {onUndo ? (
-            <Pressable
-              style={styles.undo}
-              onPress={onUndo}
-              accessibilityRole="button"
-              accessibilityLabel="Desfazer esta conclusão"
-            >
-              <Text style={styles.undoText}>Desfazer</Text>
-            </Pressable>
-          ) : null}
-        </View>
-      ) : (
-        <View style={styles.controls}>
-          <SkillGrid
-            hero={battle.hero}
-            enemy={battle.enemy}
-            disabled={waiting}
-            onSkill={onMove}
-            onInspect={setInspected}
+        <View style={[styles.topRow, { paddingTop: insets.top + space.sm }]}>
+          <EnemyPlate actor={battle.enemy} reduceMotion={reduceMotion} />
+          <TurnPill
+            label={finished ? 'Fim da luta' : waiting ? `${battle.enemy.name} age` : 'Sua vez'}
+            turn={`Turno ${turnShown} de ${MAX_BATTLE_TURNS}`}
+            mine={!waiting && !finished}
+            reduceMotion={reduceMotion}
           />
         </View>
-      )}
+
+        {showTutorial && !finished && battle.turn === 0 ? (
+          <BattleTutorial energyLabel={battle.hero.energyLabel} onDone={() => onTutorialDone?.()} />
+        ) : null}
+        {intro ? (
+          <BattleBanner text={battle.log[0]?.text ?? ''} reduceMotion={reduceMotion} />
+        ) : null}
+        <Animated.View pointerEvents="none" style={[styles.critFlash, flashStyle]} />
+      </Animated.View>
+
+      <View style={[styles.panel, { paddingBottom: insets.bottom + space.md }]}>
+        {showResult ? (
+          <BattleResult
+            won={won}
+            title={won ? battle.victoryTitle : 'Você caiu'}
+            xpLine={rewardCopy(won, reward)}
+            xpValue={won && reward && !reward.reduced ? reward.xpAwarded : 0}
+            lines={resultLines}
+            onDismiss={onDismiss}
+            onUndo={onUndo}
+            reduceMotion={reduceMotion}
+          />
+        ) : (
+          <>
+            <View style={styles.log} accessibilityLiveRegion="polite">
+              {lines.map((entry, index) => (
+                <Text
+                  key={entry.id}
+                  style={index === lines.length - 1 ? styles.logNow : styles.logPast}
+                  numberOfLines={2}
+                >
+                  {entry.text}
+                </Text>
+              ))}
+              {battle.turn === 0 && !finished ? (
+                <Text style={styles.logPast}>Segure um golpe para ler tudo o que ele faz.</Text>
+              ) : null}
+            </View>
+            <HeroBar actor={battle.hero} reduceMotion={reduceMotion} />
+            <View style={styles.controls}>
+              <SkillGrid
+                hero={battle.hero}
+                enemy={battle.enemy}
+                disabled={waiting || finished}
+                onSkill={(skillId) => {
+                  if (showTutorial) onTutorialDone?.();
+                  onMove(skillId);
+                }}
+                onInspect={setInspected}
+              />
+            </View>
+          </>
+        )}
+      </View>
+
+      {showResult && won && !reduceMotion ? <Confetti width={width} height={height} /> : null}
       {inspected && !finished ? (
         <SkillDetail
           skill={inspected}
@@ -276,96 +359,35 @@ function rewardCopy(won: boolean, reward: BattleRewardView | null): string {
 }
 
 const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-    backgroundColor: colors.bg,
+  screen: { flex: 1, backgroundColor: tone.panel },
+  arena: { width: '100%', overflow: 'hidden', backgroundColor: colors.bgElevated },
+  backdrop: { ...StyleSheet.absoluteFill, width: '100%', height: '100%' },
+  scrimTop: { position: 'absolute', left: 0, right: 0, top: 0 },
+  scrimBottom: { position: 'absolute', left: 0, right: 0, bottom: 0, height: 90 },
+  fighter: { position: 'absolute' },
+  topRow: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
     paddingHorizontal: space.lg,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
     gap: space.md,
   },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  turn: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: colors.textMuted,
-    fontVariant: ['tabular-nums'],
-  },
-  phase: {
-    paddingHorizontal: space.md,
-    paddingVertical: space.xs,
-    borderRadius: radius.pill,
-    backgroundColor: colors.amber,
-  },
-  phaseEnemy: { backgroundColor: colors.dangerBg },
-  phaseDone: { backgroundColor: colors.bgElevated },
-  phaseText: { fontSize: 12, fontWeight: '800', color: colors.text },
-  phaseTextOnAmber: { color: colors.bg },
+  critFlash: { ...StyleSheet.absoluteFill, backgroundColor: '#FFFFFF' },
 
-  arena: {
-    backgroundColor: colors.bgElevated,
-    borderRadius: radius.lg,
-    overflow: 'hidden',
-    padding: space.md,
-    justifyContent: 'space-between',
+  panel: {
+    flex: 1,
+    paddingHorizontal: space.lg,
+    paddingTop: space.xs,
+    gap: space.md,
+    backgroundColor: tone.panel,
   },
-  backdrop: { ...StyleSheet.absoluteFill, width: undefined, height: undefined },
-  // Véu leve: o cenário fica atrás, os cartões e personagens na frente.
-  scrim: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(11, 16, 32, 0.18)' },
-  enemyRow: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
-  heroRow: { flexDirection: 'row', alignItems: 'flex-end', gap: space.sm },
-
-  log: { minHeight: 44, justifyContent: 'center', paddingHorizontal: space.xs },
+  log: { minHeight: 40, justifyContent: 'center' },
   logPast: { fontSize: 13, lineHeight: 18, color: colors.textMuted },
-  logNow: { fontSize: 15, lineHeight: 21, fontWeight: '700', color: colors.text },
-
+  logNow: { fontSize: 15, lineHeight: 21, fontWeight: '800', color: colors.text },
   // Empurra as habilidades para o rodapé, perto do polegar.
-  controls: { marginTop: 'auto', gap: space.md },
-
-  result: { flex: 1, justifyContent: 'flex-end', alignItems: 'center' },
-  resultTitle: { fontSize: 26, fontWeight: '800', color: colors.text, textAlign: 'center' },
-  resultLost: { color: colors.dangerText },
-  resultXp: {
-    marginTop: space.sm,
-    fontSize: 22,
-    fontWeight: '800',
-    color: colors.amberSoft,
-    textAlign: 'center',
-    fontVariant: ['tabular-nums'],
-  },
-  resultLine: {
-    marginTop: space.sm,
-    fontSize: 14,
-    color: colors.textMuted,
-    textAlign: 'center',
-    fontVariant: ['tabular-nums'],
-  },
-  habit: {
-    marginTop: space.sm,
-    fontSize: 14,
-    lineHeight: 20,
-    fontWeight: '700',
-    color: colors.amberSoft,
-    textAlign: 'center',
-  },
-  cta: {
-    marginTop: space.xl,
-    minHeight: 52,
-    alignSelf: 'stretch',
-    borderRadius: radius.md,
-    backgroundColor: colors.amber,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  ctaText: { fontSize: 16, fontWeight: '800', color: colors.bg },
-  undo: {
-    marginTop: space.sm,
-    minHeight: 44,
-    minWidth: 180,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  undoText: { fontSize: 14, fontWeight: '700', color: colors.textMuted },
+  controls: { marginTop: 'auto' },
 });

@@ -12,6 +12,7 @@ jest.mock('react-native-reanimated', () => {
       quad: easing(),
       cubic: easing(),
       sin: easing(),
+      linear: easing(),
     },
     useSharedValue: (value: unknown) => ({ value }),
     useAnimatedStyle: (updater: () => object) => updater(),
@@ -19,6 +20,7 @@ jest.mock('react-native-reanimated', () => {
     withDelay: (_delay: number, value: unknown) => value,
     withSequence: (...values: unknown[]) => values[values.length - 1],
     withRepeat: (value: unknown) => value,
+    withSpring: (value: unknown) => value,
     cancelAnimation: () => undefined,
   };
 });

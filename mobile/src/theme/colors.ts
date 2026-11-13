@@ -21,3 +21,19 @@ export const colors = {
   mage: '#38BDF8',
   rogue: '#A3E635',
 } as const;
+
+/**
+ * Tokens da batalha. Pares [topo, base] viram degradê nas barras e cartões:
+ * no jogo o volume ajuda a ler o que é botão e o que é cenário.
+ */
+export const battle = {
+  hpHero: ['#4ADE80', '#16A34A'],
+  hpEnemy: ['#FBBF24', '#EA580C'],
+  hpLow: ['#F87171', '#B91C1C'],
+  energy: ['#7DD3FC', '#2563EB'],
+  card: ['#26324A', '#162033'],
+  cardOff: ['#1C2436', '#141B2B'],
+  panel: '#0B1222',
+  scrimTop: ['rgba(5, 8, 20, 0.75)', 'rgba(5, 8, 20, 0)'],
+  scrimBottom: ['rgba(11, 18, 34, 0)', 'rgba(11, 18, 34, 0.85)', '#0B1222'],
+} as const;

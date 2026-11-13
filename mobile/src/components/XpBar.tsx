@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from 'react';
-import { Animated, Easing, StyleSheet, Text, useAnimatedValue, View } from 'react-native';
+import { Animated, Easing, StyleSheet, Text, View } from 'react-native';
+import { useAnimatedValue } from '../motion/useAnimatedValue';
 import {
   planXpBarAnimation,
   xpBarAccessibilityValue,
