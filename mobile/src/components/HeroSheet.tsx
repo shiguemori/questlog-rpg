@@ -36,24 +36,35 @@ import type {
   AttributeKey,
   CharacterClass,
   DailyGoalTarget,
+  MusicVolume,
   PlayerSettings,
 } from '../domain/types';
+import { heroArtKey } from '../domain/loot';
 import { useReducedMotion } from '../platform/feedback';
 import { colors } from '../theme/colors';
 import { radius, space } from '../theme/spacing';
 import { CharacterArt } from './CharacterArt';
+import { Backpack } from './hero/Backpack';
 import { SkillLoadout } from './hero/SkillLoadout';
 import { TalentTree } from './hero/TalentTree';
 import { XpBar } from './XpBar';
 
-type HeroTab = 'ATTRIBUTES' | 'TALENTS' | 'SKILLS' | 'JOURNEY' | 'SETTINGS';
+type HeroTab = 'ATTRIBUTES' | 'TALENTS' | 'SKILLS' | 'BACKPACK' | 'JOURNEY' | 'SETTINGS';
 
 const TABS: readonly { id: HeroTab; label: string }[] = [
   { id: 'ATTRIBUTES', label: 'Atributos' },
   { id: 'TALENTS', label: 'Talentos' },
   { id: 'SKILLS', label: 'Golpes' },
+  { id: 'BACKPACK', label: 'Mochila' },
   { id: 'JOURNEY', label: 'Jornada' },
   { id: 'SETTINGS', label: 'Ajustes' },
+];
+
+const MUSIC_CHOICES: readonly { value: MusicVolume; label: string }[] = [
+  { value: 0, label: 'Desligada' },
+  { value: 0.3, label: 'Baixa' },
+  { value: 0.6, label: 'Média' },
+  { value: 1, label: 'Alta' },
 ];
 
 export interface HeroSheetProps {
@@ -180,7 +191,7 @@ export function HeroSheet({
           <View style={styles.identity}>
             <View style={styles.portrait}>
               <CharacterArt
-                assetKey={`hero.${character.characterClass.toLowerCase()}`}
+                assetKey={heroArtKey(character.characterClass, state.inventory)}
                 size={84}
                 accessibilityLabel={`${classLabel} ${character.name}`}
               />
@@ -277,6 +288,12 @@ export function HeroSheet({
           {tab === 'SKILLS' ? (
             <View style={styles.panel}>
               <SkillLoadout state={state} onHeroChange={onHeroChange} />
+            </View>
+          ) : null}
+
+          {tab === 'BACKPACK' ? (
+            <View style={styles.panel}>
+              <Backpack state={state} onHeroChange={onHeroChange} />
             </View>
           ) : null}
 
@@ -394,6 +411,25 @@ export function HeroSheet({
                 </Pressable>
               </View>
 
+              <Text style={styles.section}>Música da batalha</Text>
+              <View style={styles.choiceRow}>
+                {MUSIC_CHOICES.map((choice) => {
+                  const selected = state.settings.musicVolume === choice.value;
+                  return (
+                    <Pressable
+                      key={choice.label}
+                      onPress={() => onPatchSettings({ musicVolume: choice.value })}
+                      style={[styles.choice, selected && styles.choiceOn]}
+                      accessibilityRole="radio"
+                      accessibilityState={{ selected }}
+                      accessibilityLabel={`Música da batalha ${choice.label.toLowerCase()}`}
+                    >
+                      <Text style={styles.choiceText}>{choice.label}</Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+
               <Text style={styles.section}>Herói</Text>
               <View style={styles.inline}>
                 <TextInput
@@ -493,16 +529,18 @@ const styles = StyleSheet.create({
   name: { fontSize: 24, fontWeight: '800', color: colors.text },
   rank: { marginTop: 2, fontSize: 14, fontWeight: '600', color: colors.amberSoft },
 
-  // Trilho com as 5 abas visíveis de uma vez (sem rolar e sem esconder "Ajustes").
+  // Grade 3×2: as 6 abas visíveis de uma vez (sem rolar e sem esconder "Ajustes").
   tabs: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
+    rowGap: TAB_PAD,
     marginVertical: space.lg,
     padding: TAB_PAD,
     borderRadius: radius.md,
     backgroundColor: colors.bgElevated,
   },
   tab: {
-    flex: 1,
+    flexBasis: '33.333%',
     alignItems: 'center',
     justifyContent: 'center',
     minHeight: 40,

@@ -1,3 +1,5 @@
+import type { Inventory } from './loot';
+
 export type Difficulty = 'EASY' | 'MEDIUM' | 'HARD';
 export type Category = 'STUDY' | 'WORK' | 'HEALTH' | 'HOME' | 'OTHER';
 export type CharacterClass = 'WARRIOR' | 'MAGE' | 'ROGUE';
@@ -92,6 +94,21 @@ export interface PlayerSettings {
   streakShieldUsedOn: string | null;
   /** Já viu a dica de como lutar (aparece na primeira batalha). */
   battleTutorialDone: boolean;
+  /** Volume da trilha da batalha (0 = desligada). Independe do Som dos efeitos. */
+  musicVolume: MusicVolume;
+}
+
+export type MusicVolume = 0 | 0.3 | 0.6 | 1;
+
+/** Progresso do chefe da semana (ver `boss.ts`). Datas em YYYY-MM-DD. */
+export interface WeeklyBoss {
+  /** Segunda-feira da semana contada em `wins`. */
+  weekKey: string | null;
+  wins: number;
+  /** Semana (segunda-feira) em que o chefe foi vencido. */
+  beatenWeek: string | null;
+  /** Dia da última tentativa (uma por dia). */
+  triedOn: string | null;
 }
 
 export interface AppState {
@@ -100,4 +117,7 @@ export interface AppState {
   quests: Quest[];
   stats: UserStats;
   settings: PlayerSettings;
+  /** Equipamento e poções (ver `loot.ts`). */
+  inventory: Inventory;
+  weeklyBoss: WeeklyBoss;
 }

@@ -7,8 +7,11 @@
  */
 import {
   applyEnemyMove,
+  applyPlayerItem,
   HERO_SKILLS,
   applyPlayerMove,
+  potionBlock,
+  type EnemyVariant,
   previewDamage,
   skillBlock,
   startBattle,
@@ -76,6 +79,15 @@ function buildHero(cls: CharacterClass, level: number): Character {
   return { ...character, loadout: [...unlocked, ...base].slice(0, 5) };
 }
 
+/** Com pouca vida, bebe água (se tiver); sem energia, café. */
+function choosePotion(state: BattleState): 'potion.water' | 'potion.coffee' | null {
+  const { hero } = state;
+  if (hero.hp / hero.maxHp < 0.4 && potionBlock(state, 'potion.water') == null)
+    return 'potion.water';
+  if (hero.energy < 4 && potionBlock(state, 'potion.coffee') == null) return 'potion.coffee';
+  return null;
+}
+
 function choose(state: BattleState): BattleSkill {
   const { hero, enemy } = state;
   const ready = hero.skills.filter((entry) => skillBlock(hero, entry) == null);
@@ -108,6 +120,7 @@ function fight(
   difficulty: Difficulty,
   level: number,
   seed: number,
+  variant: EnemyVariant = 'NORMAL',
 ): Result {
   const character = buildHero(cls, level);
   let state = startBattle({
@@ -118,9 +131,14 @@ function fight(
     seed,
     skills: battleSkillsFor(character),
     bonus: heroBonus(character),
+    variant,
+    // Quem chega no chefe costuma ter juntado algumas poções.
+    potions: variant === 'NORMAL' ? {} : { 'potion.water': 2, 'potion.coffee': 1 },
   });
-  for (let guard = 0; guard < 80; guard += 1) {
-    if (state.phase === 'PLAYER_TURN') state = applyPlayerMove(state, choose(state).id);
+  for (let guard = 0; guard < 120; guard += 1) {
+    const potion = state.phase === 'PLAYER_TURN' ? choosePotion(state) : null;
+    if (potion) state = applyPlayerItem(state, potion);
+    else if (state.phase === 'PLAYER_TURN') state = applyPlayerMove(state, choose(state).id);
     else if (state.phase === 'ENEMY_TURN') state = applyEnemyMove(state);
     else break;
   }
@@ -129,6 +147,35 @@ function fight(
     turns: state.turn,
     hpLeft: state.hero.hp / state.hero.maxHp,
   };
+}
+
+// `npx tsx scripts/simulate-battles.ts especiais`: só elite e chefe.
+if (process.argv[2] === 'especiais') {
+  const lines: string[] = [];
+  for (const variant of ['ELITE', 'BOSS'] as const) {
+    for (const level of [2, 3, 5, 8]) {
+      const cells: string[] = [];
+      for (const cls of CLASSES) {
+        let wins = 0;
+        let turns = 0;
+        const cats: Category[] = variant === 'BOSS' ? ['OTHER'] : CATEGORIES;
+        for (const category of cats) {
+          for (let run = 0; run < RUNS; run += 1) {
+            const result = fight(cls, category, 'HARD', level, 1000 + run * 7919, variant);
+            if (result.won) wins += 1;
+            turns += result.turns;
+          }
+        }
+        const total = RUNS * cats.length;
+        cells.push(
+          `${cls.padEnd(7)} ${((wins / total) * 100).toFixed(0).padStart(3)}% ${(turns / total).toFixed(1)}t`,
+        );
+      }
+      lines.push(`${variant.padEnd(5)} nv${String(level).padEnd(2)} | ${cells.join(' | ')}`);
+    }
+  }
+  console.log(lines.join(String.fromCharCode(10)));
+  process.exit(0);
 }
 
 const rows: string[] = [];

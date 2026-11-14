@@ -9,10 +9,16 @@ import { VillainDefeatOverlay } from './src/components/VillainDefeatOverlay';
 import { XP_DENY_COPY } from './src/domain/antiFarm';
 import {
   applyEnemyMove,
+  applyPlayerItem,
   applyPlayerMove,
+  rollEnemyVariant,
   startBattle,
   type BattleState,
 } from './src/domain/battle';
+import { applyBattleSpoils } from './src/domain/battleSpoils';
+import { bossStatus, settleBossBattle } from './src/domain/boss';
+import { gearBonus, heroArtKey, heroLook, mergeBonus, type PotionId } from './src/domain/loot';
+import { lootViewOf } from './src/components/battle/lootView';
 import {
   completeQuest,
   planQuestCompletion,
@@ -43,6 +49,7 @@ import type {
   AttributeKey,
   Category,
   CharacterClass,
+  Difficulty,
   PlayerSettings,
 } from './src/domain/types';
 import { localIsoDate } from './src/domain/dates';
@@ -121,7 +128,12 @@ function vitalsLine(character: AppState['character'], now: Date): string {
 }
 
 interface BattleSession {
-  questId: string;
+  /** Luta de quest (conclui a quest) ou o chefe da semana. */
+  kind: 'QUEST' | 'BOSS';
+  questId: string | null;
+  difficulty: Difficulty;
+  /** Semente da luta: decide a sorte e o loot. */
+  seed: number;
   startedAtMs: number;
   snapshot: AppState;
   battle: BattleState;
@@ -255,26 +267,76 @@ export function QuestLogApp({ store = stateStore }: QuestLogAppProps) {
       if (settledRef.current) return;
       settledRef.current = true;
       clearEnemyTimer();
-      const rewardTier: QuestRewardTier = phase === 'VICTORY' ? 'FULL' : 'REDUCED';
+      const won = phase === 'VICTORY';
+
+      if (base.kind === 'BOSS' || base.questId == null) {
+        const endedAt = new Date();
+        const outcome = settleBossBattle(base.snapshot, {
+          won,
+          heroHp: battle.hero.hp,
+          seed: base.seed,
+          now: endedAt,
+          potionsUsed: battle.potionsUsed,
+        });
+        const bossReward: BattleRewardView = {
+          vitalsLine: vitalsLine(outcome.state.character, endedAt),
+          xpAwarded: outcome.xpAwarded,
+          reduced: false,
+          habitLine: won ? 'Ele volta na semana que vem.' : 'Dá para tentar de novo amanhã.',
+          summary: won ? undefined : 'Sem XP desta vez.',
+          loot: lootViewOf(outcome.drop),
+        };
+        const settled: BattleSession = {
+          ...base,
+          battle,
+          reward: bossReward,
+          leveledUp: outcome.leveledUp,
+          newLevel: outcome.newLevel,
+        };
+        sessionRef.current = settled;
+        setSession(settled);
+        setState(outcome.state);
+        if (won) {
+          playHaptic('SUCCESS');
+          void playVictorySound(base.snapshot.settings.soundEnabled);
+          announce(`Chefe derrotado! Mais ${outcome.xpAwarded} de XP.`);
+        } else {
+          playHaptic('WARNING');
+          announce('Você caiu. Dá para tentar de novo amanhã.');
+        }
+        return;
+      }
+
+      const rewardTier: QuestRewardTier = won ? 'FULL' : 'REDUCED';
       const completed = completeQuest(base.snapshot, base.questId, new Date(base.startedAtMs), {
         rewardTier,
       });
       // A vida que sobrou fica guardada para a próxima luta (level up enche).
       const endedAt = new Date();
-      const result = completed
-        ? {
-            ...completed,
-            state: {
-              ...completed.state,
-              character: settleHeroVitals(
-                completed.state.character,
-                battle.hero.hp,
-                endedAt,
-                completed.leveledUp,
-              ),
-            },
-          }
+      const spoils = completed
+        ? applyBattleSpoils(completed.state, {
+            battle,
+            won,
+            seed: base.seed,
+            difficulty: base.difficulty,
+            now: endedAt,
+          })
         : null;
+      const result =
+        completed && spoils
+          ? {
+              ...completed,
+              state: {
+                ...spoils.state,
+                character: settleHeroVitals(
+                  spoils.state.character,
+                  battle.hero.hp,
+                  endedAt,
+                  completed.leveledUp,
+                ),
+              },
+            }
+          : null;
       const reward: BattleRewardView = {
         vitalsLine: result ? vitalsLine(result.state.character, endedAt) : null,
         xpAwarded: result?.xpAwarded ?? 0,
@@ -285,6 +347,7 @@ export function QuestLogApp({ store = stateStore }: QuestLogAppProps) {
               milestone: result.streakMilestone,
             })
           : null,
+        loot: lootViewOf(spoils?.drop ?? null),
       };
       const next: BattleSession = {
         ...base,
@@ -378,6 +441,60 @@ export function QuestLogApp({ store = stateStore }: QuestLogAppProps) {
     [resolveBattle, scheduleEnemyTurn],
   );
 
+  const handlePlayerItem = useCallback(
+    (potionId: PotionId) => {
+      const current = sessionRef.current;
+      if (!current || current.reward || settledRef.current) return;
+      const nextBattle = applyPlayerItem(current.battle, potionId);
+      if (nextBattle === current.battle) return;
+      const pending: BattleSession = { ...current, battle: nextBattle };
+      sessionRef.current = pending;
+      setSession(pending);
+      scheduleEnemyTurn();
+    },
+    [scheduleEnemyTurn],
+  );
+
+  /** Chefe da semana: só com as vitórias da semana e uma tentativa por dia. */
+  const handleStartBoss = useCallback(() => {
+    const current = stateRef.current;
+    if (!current || sessionRef.current) return;
+    const now = new Date();
+    if (bossStatus(current.weeklyBoss, now, current.character.level).availability !== 'READY')
+      return;
+    clearUndo();
+    settledRef.current = false;
+    const seed = now.getTime() >>> 0;
+    const next: BattleSession = {
+      kind: 'BOSS',
+      questId: null,
+      difficulty: 'HARD',
+      seed,
+      startedAtMs: now.getTime(),
+      snapshot: current,
+      battle: startBattle({
+        character: current.character,
+        category: 'OTHER',
+        difficulty: 'HARD',
+        variant: 'BOSS',
+        heroName: current.character.name,
+        heroHp: battleStartHp(current.character, now),
+        seed,
+        skills: battleSkillsFor(current.character),
+        bonus: mergeBonus(heroBonus(current.character), gearBonus(current.inventory)),
+        potions: current.inventory.potions,
+        heroLook: heroLook(current.inventory),
+      }),
+      reward: null,
+      leveledUp: false,
+      newLevel: null,
+    };
+    sessionRef.current = next;
+    setSession(next);
+    announce(`Chefe da semana: ${next.battle.enemy.name}.`);
+    playHaptic('TAP');
+  }, [clearUndo]);
+
   const dismissBattle = useCallback(() => {
     const pending = sessionRef.current;
     const level = pending?.leveledUp ? pending.newLevel : null;
@@ -400,19 +517,26 @@ export function QuestLogApp({ store = stateStore }: QuestLogAppProps) {
       if (plan === 'BATTLE') {
         clearUndo();
         settledRef.current = false;
+        const seed = now.getTime() >>> 0;
         const next: BattleSession = {
+          kind: 'QUEST',
           questId,
+          difficulty: quest.difficulty,
+          seed,
           startedAtMs: now.getTime(),
           snapshot: current,
           battle: startBattle({
             character: current.character,
             category: quest.category,
             difficulty: quest.difficulty,
+            variant: rollEnemyVariant(seed, quest.difficulty, current.character.level),
             heroName: current.character.name,
             heroHp: battleStartHp(current.character, now),
-            seed: now.getTime() >>> 0,
+            seed,
             skills: battleSkillsFor(current.character),
-            bonus: heroBonus(current.character),
+            bonus: mergeBonus(heroBonus(current.character), gearBonus(current.inventory)),
+            potions: current.inventory.potions,
+            heroLook: heroLook(current.inventory),
           }),
           reward: null,
           leveledUp: false,
@@ -648,6 +772,7 @@ export function QuestLogApp({ store = stateStore }: QuestLogAppProps) {
           }}
           onCalendarDay={handleCalendarDay}
           heroRequest={heroRequest}
+          onStartBoss={handleStartBoss}
         />
       ) : (
         <OnboardingScreen onComplete={handleOnboarding} />
@@ -657,9 +782,11 @@ export function QuestLogApp({ store = stateStore }: QuestLogAppProps) {
           battle={session.battle}
           reward={session.reward}
           onMove={handlePlayerMove}
+          onItem={handlePlayerItem}
           onDismiss={dismissBattle}
-          onUndo={undoState ? handleUndo : undefined}
+          onUndo={undoState && session.kind === 'QUEST' ? handleUndo : undefined}
           soundEnabled={state?.settings.soundEnabled ?? false}
+          musicVolume={state?.settings.musicVolume ?? 0}
           showTutorial={state ? !state.settings.battleTutorialDone : false}
           onTutorialDone={() => patchSettings({ battleTutorialDone: true })}
         />
@@ -673,7 +800,7 @@ export function QuestLogApp({ store = stateStore }: QuestLogAppProps) {
         visible={levelUpLevel != null}
         level={levelUpLevel ?? state.character.level}
         heroName={state.character.name || DEFAULT_HERO_NAME}
-        assetKey={`hero.${state.character.characterClass.toLowerCase()}`}
+        assetKey={heroArtKey(state.character.characterClass, state.inventory)}
         rewards={levelUpRewards()}
         unlockLine={levelUpUnlock(levelUpLevel)}
         onDismiss={() => setLevelUpLevel(null)}

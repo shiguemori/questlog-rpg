@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import Animated, {
   Easing,
@@ -20,7 +20,7 @@ import {
   type BattleSide,
   type FxKind,
 } from '../../domain/battle';
-import { CharacterArt } from '../CharacterArt';
+import { CharacterArt, type ActorPose } from '../CharacterArt';
 import { FloatingText, FxBurst } from './BattleFx';
 
 import { EVENT_STEP_MS, WINDUP_MS } from './timing';
@@ -48,7 +48,14 @@ export interface ActorStageProps {
   reduceMotion: boolean;
   /** Nocaute: o sprite cai e apaga. */
   knockedOut: boolean;
+  /** Venceu a luta: fica na pose de vitória. */
+  celebrating?: boolean;
 }
+
+/** Quanto cada pose fica na tela antes de voltar a ficar parado. */
+const ATTACK_HOLD_MS = 380;
+const HURT_HOLD_MS = 420;
+const CHEER_HOLD_MS = 520;
 
 function textFor(event: BattleEvent, side: BattleSide): TextSpec | null {
   switch (event.kind) {
@@ -60,6 +67,8 @@ function textFor(event: BattleEvent, side: BattleSide): TextSpec | null {
       return { text: `${event.amount}`, color: event.status === 'BURN' ? '#FDBA74' : '#BEF264' };
     case 'HEAL':
       return { text: `+${event.amount}`, color: '#86EFAC' };
+    case 'ENERGY':
+      return { text: `+${event.amount}`, color: '#FDE68A', label: 'ENERGIA' };
     case 'SHIELD':
       return { text: `+${event.amount}`, color: '#93C5FD', label: 'ESCUDO' };
     case 'MISS':
@@ -85,6 +94,7 @@ function fxFor(event: BattleEvent): FxKind | null {
   }
   if (event.kind === 'TRAIT') return event.fx ?? 'BUFF';
   if (event.kind === 'HEAL') return 'HEAL';
+  if (event.kind === 'ENERGY') return 'BUFF';
   if (event.kind === 'SHIELD') return 'SHIELD';
   if (event.kind === 'MISS') return 'SMOKE';
   return null;
@@ -128,7 +138,14 @@ function effectsFor(events: readonly BattleEvent[], side: BattleSide): StageEffe
  * recua ao apanhar, desvia, cai no nocaute. Escudo vira uma bolha enquanto durar.
  * Partículas e números saem dos eventos do motor.
  */
-export function ActorStage({ actor, events, size, reduceMotion, knockedOut }: ActorStageProps) {
+export function ActorStage({
+  actor,
+  events,
+  size,
+  reduceMotion,
+  knockedOut,
+  celebrating = false,
+}: ActorStageProps) {
   const side = actor.side;
   const direction = side === 'PLAYER' ? 1 : -1;
   const breathe = useSharedValue(0);
@@ -142,6 +159,8 @@ export function ActorStage({ actor, events, size, reduceMotion, knockedOut }: Ac
   const shieldOn = useSharedValue(actor.shield > 0 ? 1 : 0);
   const shieldPulse = useSharedValue(0);
   const lastSeq = useRef(0);
+  const [pose, setPose] = useState<ActorPose>('idle');
+  const poseTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
   const stunned = actor.statuses.some((effect) => effect.id === 'STUN');
 
   // Partículas e números saem direto dos eventos da última ação.
@@ -179,6 +198,39 @@ export function ActorStage({ actor, events, size, reduceMotion, knockedOut }: Ac
       duration: reduceMotion ? 0 : actor.shield > 0 ? 320 : 220,
     });
   }, [actor.shield, reduceMotion, shieldOn]);
+
+  // Poses do quadro: trocam no mesmo tempo das animações abaixo.
+  useEffect(() => {
+    const fresh = events.filter((event) => event.seq > lastSeq.current);
+    if (fresh.length === 0) return undefined;
+    poseTimers.current.forEach(clearTimeout);
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    const at = (ms: number, next: ActorPose) => {
+      timers.push(setTimeout(() => setPose(next), Math.max(0, ms)));
+    };
+    fresh.forEach((event, index) => {
+      const delay = index * EVENT_STEP_MS;
+      if (event.kind === 'CAST' && event.source === side) {
+        if (event.target !== side) {
+          at(delay, 'windup');
+          at(delay + WINDUP_MS, 'attack');
+          at(delay + WINDUP_MS + ATTACK_HOLD_MS, 'idle');
+        } else {
+          at(delay, 'victory');
+          at(delay + CHEER_HOLD_MS, 'idle');
+        }
+      }
+      if (event.target === side && (event.kind === 'DAMAGE' || event.kind === 'TICK')) {
+        const hit = WINDUP_MS + delay + 70;
+        at(hit, 'hurt');
+        at(hit + HURT_HOLD_MS, 'idle');
+      }
+    });
+    poseTimers.current = timers;
+    return undefined;
+  }, [events, side]);
+
+  useEffect(() => () => poseTimers.current.forEach(clearTimeout), []);
 
   useEffect(() => {
     const fresh = events.filter((event) => event.seq > lastSeq.current);
@@ -343,6 +395,8 @@ export function ActorStage({ actor, events, size, reduceMotion, knockedOut }: Ac
   });
 
   const stage = { width: size * 1.25, height: size * 1.12 };
+  // Fim da luta manda na pose: nocaute ou vitória ficam até a tela fechar.
+  const shownPose: ActorPose = knockedOut ? 'ko' : celebrating ? 'victory' : pose;
   const bubble = size * 1.02;
 
   return (
@@ -361,12 +415,30 @@ export function ActorStage({ actor, events, size, reduceMotion, knockedOut }: Ac
         ]}
       />
       <Animated.View style={[styles.sprite, spriteStyle]}>
-        <CharacterArt assetKey={actor.assetKey} size={size} accessibilityLabel={actor.name} />
+        <CharacterArt
+          assetKey={actor.assetKey}
+          size={size}
+          accessibilityLabel={actor.name}
+          mode="stage"
+          pose={shownPose}
+        />
         <Animated.View style={[StyleSheet.absoluteFill, glowStyle]}>
-          <CharacterArt assetKey={actor.assetKey} size={size} tint="#BBF7D0" />
+          <CharacterArt
+            assetKey={actor.assetKey}
+            size={size}
+            tint="#BBF7D0"
+            mode="stage"
+            pose={shownPose}
+          />
         </Animated.View>
         <Animated.View style={[StyleSheet.absoluteFill, flashStyle]}>
-          <CharacterArt assetKey={actor.assetKey} size={size} tint="#FFFFFF" />
+          <CharacterArt
+            assetKey={actor.assetKey}
+            size={size}
+            tint="#FFFFFF"
+            mode="stage"
+            pose={shownPose}
+          />
         </Animated.View>
         {stunned && !knockedOut ? <StunStars size={size} reduceMotion={reduceMotion} /> : null}
       </Animated.View>

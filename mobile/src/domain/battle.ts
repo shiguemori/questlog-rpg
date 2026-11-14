@@ -7,6 +7,7 @@ import type {
   CharacterClass,
   Difficulty,
 } from './types';
+import { MAX_POTIONS_PER_BATTLE, POTIONS, type PotionId, type PotionStock } from './loot';
 import { VILLAIN_BY_CATEGORY } from './victory';
 
 /**
@@ -133,7 +134,17 @@ export interface BattleActor {
  * Cada monstro tem um jeito próprio de lutar, que a placa mostra e o motor aplica
  * no começo do turno dele. Muda a melhor estratégia de cada luta.
  */
-export type EnemyTraitId = 'MORE_TABS' | 'PILE_UP' | 'LAZY_REGEN' | 'GROWS' | 'VANISH';
+export type EnemyTraitId =
+  | 'MORE_TABS'
+  | 'PILE_UP'
+  | 'LAZY_REGEN'
+  | 'GROWS'
+  | 'VANISH'
+  /** Só o chefe: na metade da vida vira a fase 2 (golpes e arte novos). */
+  | 'TWO_PHASES';
+
+/** Monstro comum, de elite (mais forte, sempre deixa item) ou o chefe da semana. */
+export type EnemyVariant = 'NORMAL' | 'ELITE' | 'BOSS';
 
 export interface EnemyTrait {
   id: EnemyTraitId;
@@ -177,8 +188,17 @@ export const ENEMY_TRAITS: Record<Category, EnemyTrait> = {
   },
 };
 
+export const BOSS_TRAIT: EnemyTrait = {
+  id: 'TWO_PHASES',
+  name: 'Só mais 5 minutos',
+  hint: 'Muda de fase na metade da vida',
+  blurb:
+    'Com metade da vida, o despertador dispara: recupera 15% da vida, ganha +25% de dano e golpes novos.',
+};
+
 export function enemyTraitOf(actor: BattleActor): EnemyTrait | null {
   if (!actor.trait) return null;
+  if (actor.trait === BOSS_TRAIT.id) return BOSS_TRAIT;
   return Object.values(ENEMY_TRAITS).find((entry) => entry.id === actor.trait) ?? null;
 }
 
@@ -198,7 +218,9 @@ export type BattleEventKind =
   | 'SKIP'
   | 'KO'
   /** O jeito próprio do monstro agiu (ver `ENEMY_TRAITS`). `skillName` traz o nome. */
-  | 'TRAIT';
+  | 'TRAIT'
+  /** Energia recuperada (poção de café). */
+  | 'ENERGY';
 
 /** O que a tela anima depois de cada ação. `seq` cresce sempre. */
 export interface BattleEvent {
@@ -235,6 +257,11 @@ export interface BattleState {
   /** Estado do gerador aleatório (uint32). */
   rng: number;
   victoryTitle: string;
+  variant: EnemyVariant;
+  /** Poções na mochila no começo da luta (ver `loot.ts`). */
+  potions: PotionStock;
+  /** Poções gastas nesta luta. A tela desconta da mochila no fim. */
+  potionsUsed: PotionStock;
 }
 
 export interface StartBattleInput {
@@ -248,8 +275,14 @@ export interface StartBattleInput {
   seed?: number;
   /** Habilidades levadas para a luta (ver `talents.ts`). Padrão: `HERO_SKILLS`. */
   skills?: readonly BattleSkill[];
-  /** Bônus passivos da árvore de talentos. */
+  /** Bônus passivos da árvore de talentos e do equipamento. */
   bonus?: Partial<HeroBonus>;
+  /** Padrão: NORMAL. No chefe, `category` só escolhe a arena. */
+  variant?: EnemyVariant;
+  /** Poções disponíveis. Padrão: nenhuma. */
+  potions?: Partial<PotionStock>;
+  /** Chapéu vestido (`cap`, `crown`…). Muda só a arte do herói. */
+  heroLook?: string | null;
 }
 
 /** Bônus passivos que a árvore de talentos dá ao herói. */
@@ -271,6 +304,12 @@ export const NO_BONUS: HeroBonus = {
 
 /** Limite de turnos do herói. Com a vida guardada, a luta pode durar mais que antes. */
 export const MAX_BATTLE_TURNS = 12;
+/** O chefe tem mais vida: a luta pode ir mais longe. */
+export const BOSS_MAX_TURNS = 18;
+
+export function turnLimitFor(state: Pick<BattleState, 'variant'>): number {
+  return state.variant === 'BOSS' ? BOSS_MAX_TURNS : MAX_BATTLE_TURNS;
+}
 export const ENERGY_REGEN_PER_TURN = 3;
 export const CRIT_MULTIPLIER = 1.5;
 export const POISON_MAX_STACKS = 3;
@@ -343,6 +382,20 @@ function skill(spec: SkillSpec): BattleSkill {
     assetKey: `skill.${spec.id}`,
   };
 }
+
+/** Monstro de elite: mais vida e atributos. Sempre deixa item (ver `loot.ts`). */
+export const ELITE_HP_MULTIPLIER = 1.25;
+export const ELITE_ATTRIBUTE_BONUS = 1;
+/** Chance de um monstro médio ou difícil vir de elite, a partir do nível 2. */
+export const ELITE_CHANCE = 0.12;
+export const ELITE_MIN_LEVEL = 2;
+
+/** Chefe da semana: luta mais longa, com duas fases. */
+export const BOSS_NAME = 'Procrastinação';
+export const BOSS_HP_MULTIPLIER = 2.1;
+export const BOSS_PHASE2_HEAL_PCT = 10;
+export const BOSS_PHASE2_DAMAGE_BONUS = 15;
+const BOSS_ASSET = 'enemy.boss';
 
 /** Defender existe para todas as classes: segura o próximo golpe e recupera energia. */
 function defendSkill(classKey: string): BattleSkill {
@@ -1000,6 +1053,100 @@ export const ENEMY_SKILLS: Record<Category, readonly BattleSkill[]> = {
   ],
 };
 
+/** Fase 1 do chefe: adia, cansa e se esconde atrás de desculpas. */
+export const BOSS_SKILLS: readonly BattleSkill[] = [
+  skill({
+    id: 'boss.snooze',
+    name: 'Soneca do Despertador',
+    tag: 'Dano físico',
+    blurb: 'Bate o despertador na sua cabeça.',
+    kind: 'PHYSICAL',
+    scaling: 'strength',
+    power: 5,
+    ratio: 0.9,
+    fx: 'IMPACT',
+  }),
+  skill({
+    id: 'boss.later',
+    name: 'Depois Eu Faço',
+    tag: 'Deixa você cansado',
+    blurb: 'Você fica cansado por 2 turnos: −35% de dano.',
+    kind: 'MAGIC',
+    cooldown: 3,
+    scaling: 'intelligence',
+    power: 2,
+    ratio: 0.4,
+    applies: [{ status: 'WEAKEN', target: 'TARGET', turns: 2, potency: 35 }],
+    fx: 'DEBUFF',
+  }),
+  skill({
+    id: 'boss.video',
+    name: 'Só Mais um Vídeo',
+    tag: 'Trava você',
+    blurb: 'Você perde a próxima ação.',
+    kind: 'MAGIC',
+    cooldown: 5,
+    scaling: 'intelligence',
+    power: 2,
+    ratio: 0.5,
+    applies: [{ status: 'STUN', target: 'TARGET', turns: 1 }],
+    fx: 'ARCANE',
+  }),
+  skill({
+    id: 'boss.excuse',
+    name: 'Desculpa Perfeita',
+    tag: 'Escudo',
+    blurb: 'Arruma a desculpa perfeita e absorve dano.',
+    kind: 'SUPPORT',
+    cooldown: 4,
+    scaling: 'vitality',
+    shield: { power: 6, ratio: 1.6 },
+    fx: 'SHIELD',
+  }),
+];
+
+/** Fase 2: o alarme dispara e tudo fica para a última hora. */
+export const BOSS_PHASE2_SKILLS: readonly BattleSkill[] = [
+  skill({
+    id: 'boss.alarm',
+    name: 'Alarme Estridente',
+    tag: '2 golpes',
+    blurb: 'Toca duas vezes, sem parar.',
+    kind: 'MAGIC',
+    scaling: 'intelligence',
+    power: 3,
+    ratio: 0.55,
+    hits: 2,
+    fx: 'ARCANE',
+  }),
+  skill({
+    id: 'boss.deadline',
+    name: 'Prazo Estourado',
+    tag: 'Estresse 3 turnos',
+    blurb: 'O estresse ferve por 3 turnos.',
+    kind: 'MAGIC',
+    cooldown: 3,
+    scaling: 'intelligence',
+    power: 3,
+    ratio: 0.5,
+    applies: [{ status: 'BURN', target: 'TARGET', turns: 3, potency: 2, potencyRatio: 0.3 }],
+    fx: 'FIRE',
+  }),
+  skill({
+    id: 'boss.panic',
+    name: 'Pânico da Última Hora',
+    tag: 'Dano pesado',
+    blurb: 'Tudo de uma vez, no último minuto.',
+    kind: 'PHYSICAL',
+    cooldown: 3,
+    scaling: 'strength',
+    power: 7,
+    ratio: 1.15,
+    fx: 'IMPACT',
+  }),
+  BOSS_SKILLS[0],
+];
+
 // ---------------------------------------------------------------------------
 // Atributos → números da luta
 // ---------------------------------------------------------------------------
@@ -1419,6 +1566,21 @@ function applyEnemyTrait(draft: Draft, previous: readonly BattleEvent[], enemyTu
       emit(draft, { kind: 'SHIELD', target: 'ENEMY', source: 'ENEMY', amount, fx: 'SHIELD' });
       return;
     }
+    case 'TWO_PHASES': {
+      if (enemy.traitUsed || !half) return;
+      draft.state = withActor(draft.state, {
+        ...enemy,
+        traitUsed: true,
+        skills: BOSS_PHASE2_SKILLS,
+        cooldowns: {},
+        damageBonus: enemy.damageBonus + BOSS_PHASE2_DAMAGE_BONUS,
+        assetKey: `${BOSS_ASSET}+phase2`,
+      });
+      draft.lines.push(`O despertador disparou! ${enemy.name} entra na fase 2.`);
+      traitEvent(draft, trait, 'BUFF');
+      heal(draft, 'ENEMY', Math.round((enemy.maxHp * BOSS_PHASE2_HEAL_PCT) / 100));
+      return;
+    }
     case 'VANISH': {
       if (enemy.traitUsed || !half) return;
       draft.state = withActor(draft.state, {
@@ -1518,7 +1680,11 @@ export function startBattle(input: StartBattleInput): BattleState {
   stats.maxHp += bonus.maxHp;
   stats.maxEnergy += bonus.maxEnergy;
   stats.critChance = Math.min(60, stats.critChance + bonus.critChance);
-  const villain = VILLAIN_BY_CATEGORY[input.category];
+  const variant: EnemyVariant = input.variant ?? 'NORMAL';
+  const villain =
+    variant === 'BOSS'
+      ? { name: BOSS_NAME, defeatedTitle: `${BOSS_NAME} derrotada!` }
+      : VILLAIN_BY_CATEGORY[input.category];
   const trimmed = input.heroName.trim();
   const heroName = trimmed.length > 0 ? trimmed : 'Herói';
   const startHp =
@@ -1526,8 +1692,35 @@ export function startBattle(input: StartBattleInput): BattleState {
       ? stats.maxHp
       : Math.max(1, Math.min(stats.maxHp, Math.floor(input.heroHp)));
   const level = Math.max(1, character.level);
-  const enemyAttrs = enemyAttributes(input.difficulty, level);
-  const enemyHp = enemyMaxHp(input.difficulty, level);
+  const scaleDifficulty: Difficulty = variant === 'BOSS' ? 'HARD' : input.difficulty;
+  const scaleLevel = level;
+  const attributeBonus = variant === 'ELITE' ? ELITE_ATTRIBUTE_BONUS : 0;
+  // O chefe bate como um monstro médio, mas aguenta mais que um difícil: a luta é longa, não injusta.
+  const baseAttrs =
+    variant === 'BOSS'
+      ? enemyAttributes('MEDIUM', Math.max(1, scaleLevel - 1))
+      : enemyAttributes(scaleDifficulty, scaleLevel);
+  const enemyAttrs: Attributes = {
+    strength: baseAttrs.strength + attributeBonus,
+    intelligence: baseAttrs.intelligence + attributeBonus,
+    agility: baseAttrs.agility,
+    vitality: baseAttrs.vitality + attributeBonus,
+  };
+  const hpMultiplier =
+    variant === 'BOSS' ? BOSS_HP_MULTIPLIER : variant === 'ELITE' ? ELITE_HP_MULTIPLIER : 1;
+  const enemyHp = Math.round(enemyMaxHp(scaleDifficulty, scaleLevel) * hpMultiplier);
+  const enemySubtitle =
+    variant === 'BOSS'
+      ? `Chefe da semana · Nv ${scaleLevel}`
+      : `${variant === 'ELITE' ? 'Elite · ' : ''}${DIFFICULTY_LABELS[input.difficulty]} · Nv ${level}`;
+  const enemyAsset =
+    variant === 'BOSS'
+      ? BOSS_ASSET
+      : `${ENEMY_ASSET[input.category]}${variant === 'ELITE' ? '+elite' : ''}`;
+  const potions: PotionStock = { 'potion.water': 0, 'potion.coffee': 0 };
+  for (const id of Object.keys(potions) as PotionId[]) {
+    potions[id] = Math.max(0, Math.floor(input.potions?.[id] ?? 0));
+  }
 
   const hero: BattleActor = {
     id: 'hero',
@@ -1552,12 +1745,12 @@ export function startBattle(input: StartBattleInput): BattleState {
       input.skills && input.skills.length > 0
         ? input.skills
         : HERO_SKILLS[character.characterClass],
-    assetKey: HERO_ASSET[character.characterClass],
+    assetKey: `${HERO_ASSET[character.characterClass]}${input.heroLook ? `+${input.heroLook}` : ''}`,
   };
   const enemy: BattleActor = {
     id: 'enemy',
     name: villain.name,
-    subtitle: `${DIFFICULTY_LABELS[input.difficulty]} · Nv ${level}`,
+    subtitle: enemySubtitle,
     side: 'ENEMY',
     hp: enemyHp,
     maxHp: enemyHp,
@@ -1573,9 +1766,9 @@ export function startBattle(input: StartBattleInput): BattleState {
     shieldBonus: 0,
     statuses: [],
     cooldowns: {},
-    skills: ENEMY_SKILLS[input.category],
-    assetKey: ENEMY_ASSET[input.category],
-    trait: ENEMY_TRAITS[input.category].id,
+    skills: variant === 'BOSS' ? BOSS_SKILLS : ENEMY_SKILLS[input.category],
+    assetKey: enemyAsset,
+    trait: variant === 'BOSS' ? BOSS_TRAIT.id : ENEMY_TRAITS[input.category].id,
   };
 
   const opening: BattleState = {
@@ -1592,8 +1785,75 @@ export function startBattle(input: StartBattleInput): BattleState {
     eventSeq: 0,
     rng: (input.seed ?? 0x5eed) >>> 0,
     victoryTitle: villain.defeatedTitle,
+    variant,
+    potions,
+    potionsUsed: { 'potion.water': 0, 'potion.coffee': 0 },
   };
   return { ...opening, enemyIntentId: chooseEnemySkill(opening).id };
+}
+
+/** Elite só em luta média ou difícil, a partir do nível 2. A semente decide. */
+export function rollEnemyVariant(
+  seed: number,
+  difficulty: Difficulty,
+  heroLevel: number,
+): EnemyVariant {
+  if (difficulty === 'EASY' || heroLevel < ELITE_MIN_LEVEL) return 'NORMAL';
+  const [value] = nextRandom((seed ^ 0xe1173) >>> 0);
+  return value < ELITE_CHANCE ? 'ELITE' : 'NORMAL';
+}
+
+/** Por que a poção não pode ser usada agora (null = pode). */
+export type PotionBlock = 'NONE_LEFT' | 'LIMIT' | 'FULL' | 'NOT_YOUR_TURN';
+
+export function potionBlock(state: BattleState, id: PotionId): PotionBlock | null {
+  if (state.phase !== 'PLAYER_TURN') return 'NOT_YOUR_TURN';
+  if (state.potions[id] - state.potionsUsed[id] <= 0) return 'NONE_LEFT';
+  const used = state.potionsUsed['potion.water'] + state.potionsUsed['potion.coffee'];
+  if (used >= MAX_POTIONS_PER_BATTLE) return 'LIMIT';
+  const potion = POTIONS[id];
+  if (potion.healPct && state.hero.hp >= state.hero.maxHp) return 'FULL';
+  if (potion.energyPct && state.hero.energy >= state.hero.maxEnergy) return 'FULL';
+  return null;
+}
+
+/** Usa uma poção. Gasta o turno do herói, como uma habilidade. */
+export function applyPlayerItem(state: BattleState, id: PotionId): BattleState {
+  if (potionBlock(state, id) != null) return state;
+  const potion = POTIONS[id];
+  const draft: Draft = { state: { ...state }, lines: [], events: [] };
+  draft.lines.push(`${state.hero.name} usou ${potion.name}.`);
+  emit(draft, {
+    kind: 'CAST',
+    target: 'PLAYER',
+    source: 'PLAYER',
+    fx: potion.healPct ? 'HEAL' : 'BUFF',
+    skillName: potion.name,
+    skillId: potion.id,
+  });
+  if (potion.healPct) heal(draft, 'PLAYER', (state.hero.maxHp * potion.healPct) / 100);
+  if (potion.energyPct) {
+    const hero = draft.state.hero;
+    const energy = Math.min(
+      hero.maxEnergy,
+      hero.energy + Math.ceil((hero.maxEnergy * potion.energyPct) / 100),
+    );
+    const gained = energy - hero.energy;
+    draft.state = { ...draft.state, hero: { ...hero, energy } };
+    draft.lines.push(`${hero.name} recupera ${gained} de ${hero.energyLabel.toLowerCase()}.`);
+    emit(draft, { kind: 'ENERGY', target: 'PLAYER', source: 'PLAYER', amount: gained, fx: 'BUFF' });
+  }
+  draft.state = {
+    ...draft.state,
+    potionsUsed: { ...state.potionsUsed, [id]: state.potionsUsed[id] + 1 },
+  };
+  endOfTurn(draft, 'PLAYER');
+  const turn = state.turn + 1;
+  return finish(state, draft, `p${turn}:${id}`, {
+    phase: 'ENEMY_TURN',
+    turn,
+    lastPlayerMoveId: id,
+  });
 }
 
 export function applyPlayerMove(state: BattleState, skillId: string): BattleState {
@@ -1666,7 +1926,7 @@ export function applyEnemyMove(state: BattleState): BattleState {
     emit(draft, { kind: 'KO', target: 'PLAYER', source: 'ENEMY' });
     return finish(state, draft, key, { phase: 'DEFEAT', enemyTurns, lastEnemyMoveId });
   }
-  if (state.turn >= MAX_BATTLE_TURNS) {
+  if (state.turn >= turnLimitFor(state)) {
     draft.lines.push(`${hero.name} não aguenta mais.`);
     return finish(state, draft, key, { phase: 'DEFEAT', enemyTurns, lastEnemyMoveId });
   }

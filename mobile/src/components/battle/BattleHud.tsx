@@ -1,6 +1,6 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import React, { useEffect } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated, {
   Easing,
   useAnimatedStyle,
@@ -15,13 +15,18 @@ import {
   HARMFUL_STATUSES,
   STATUS_LABELS,
   previewDamage,
+  potionBlock,
   previewShield,
   skillBlock,
   type BattleActor,
   type BattleSkill,
+  type BattleState,
+  type PotionBlock,
   type StatusEffect,
 } from '../../domain/battle';
+import { MAX_POTIONS_PER_BATTLE, POTION_IDS, POTIONS, type PotionId } from '../../domain/loot';
 import { PressScale } from '../../motion/PressScale';
+import { ITEM_ART } from '../actorArt';
 import { playHaptic } from '../../platform/feedback';
 import { battle as tone, colors } from '../../theme/colors';
 import { radius, space } from '../../theme/spacing';
@@ -250,6 +255,68 @@ export function HeroBar({ actor, reduceMotion }: { actor: BattleActor; reduceMot
 // ---------------------------------------------------------------------------
 // Turno
 // ---------------------------------------------------------------------------
+
+/** Nome curto da poção no botão (o nome todo vai no leitor de tela). */
+const POTION_SHORT: Record<PotionId, string> = {
+  'potion.water': 'Água',
+  'potion.coffee': 'Café',
+};
+
+const POTION_BLOCK_COPY: Record<PotionBlock, string> = {
+  NONE_LEFT: 'Acabou.',
+  LIMIT: `Já usou ${MAX_POTIONS_PER_BATTLE} nesta luta.`,
+  FULL: 'Já está cheio.',
+  NOT_YOUR_TURN: 'Espere a sua vez.',
+};
+
+/**
+ * Poções da mochila. Usar gasta o turno, como um golpe.
+ * Some quando o herói entrou na luta sem nenhuma.
+ */
+export function PotionRow({
+  battle,
+  disabled,
+  onUse,
+}: {
+  battle: BattleState;
+  disabled: boolean;
+  onUse: (id: PotionId) => void;
+}) {
+  const owned = POTION_IDS.filter((id) => battle.potions[id] > 0);
+  if (owned.length === 0) return null;
+  return (
+    <View style={styles.potionRow}>
+      {owned.map((id) => {
+        const left = battle.potions[id] - battle.potionsUsed[id];
+        const block = disabled ? 'NOT_YOUR_TURN' : potionBlock(battle, id);
+        const potion = POTIONS[id];
+        return (
+          <Pressable
+            key={id}
+            disabled={block != null}
+            onPress={() => {
+              playHaptic('TAP');
+              onUse(id);
+            }}
+            style={({ pressed }) => [
+              styles.potion,
+              block != null && styles.potionOff,
+              pressed && styles.pressed,
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel={`Usar ${potion.name}. ${potion.effect}. Restam ${left}.`}
+            accessibilityHint={block ? POTION_BLOCK_COPY[block] : 'Gasta o seu turno.'}
+            accessibilityState={{ disabled: block != null }}
+          >
+            <Image source={ITEM_ART[potion.art]} style={styles.potionArt} resizeMode="contain" />
+            <Text style={styles.potionName}>{POTION_SHORT[id]}</Text>
+            <Text style={styles.potionCount}>×{left}</Text>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
 
 export function TurnPill({
   label,
@@ -520,6 +587,29 @@ const styles = StyleSheet.create({
 
   heroWrap: { gap: space.xs + 2 },
   heroBar: { flexDirection: 'row', gap: space.md, alignItems: 'flex-end' },
+  potionRow: { flexDirection: 'row', gap: space.sm },
+  potion: {
+    minHeight: 40,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.xs,
+    paddingLeft: space.xs,
+    paddingRight: space.md,
+    borderRadius: radius.pill,
+    backgroundColor: 'rgba(30, 41, 59, 0.9)',
+    borderWidth: 1,
+    borderColor: 'rgba(148, 163, 184, 0.35)',
+  },
+  potionOff: { opacity: 0.45 },
+  pressed: { opacity: 0.85 },
+  potionArt: { width: 30, height: 30 },
+  potionName: { fontSize: 13, fontWeight: '800', color: colors.text },
+  potionCount: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: colors.textMuted,
+    fontVariant: ['tabular-nums'],
+  },
   heroCol: { flex: 3, gap: 5 },
   energyCol: { flex: 2, gap: 5 },
   heroHead: { flexDirection: 'row', alignItems: 'baseline', gap: space.sm },

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Image, type ImageSourcePropType, Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated, {
   Easing,
   type SharedValue,
@@ -100,6 +100,19 @@ export interface BattleResultProps {
   onDismiss: () => void;
   onUndo?: () => void;
   reduceMotion: boolean;
+  /** Item que o monstro deixou (null = nada desta vez). */
+  loot?: LootView | null;
+}
+
+export interface LootView {
+  name: string;
+  /** "Comum", "Raro", "Épico" (poção não tem). */
+  rarityLabel?: string;
+  /** Cor da raridade: a moldura e o rótulo. */
+  rarityColor?: string;
+  effect: string;
+  art: ImageSourcePropType;
+  chest: ImageSourcePropType;
 }
 
 /** Fim da luta: título salta, XP conta subindo, raios atrás na vitória. */
@@ -112,6 +125,7 @@ export function BattleResult({
   onDismiss,
   onUndo,
   reduceMotion,
+  loot,
 }: BattleResultProps) {
   const pop = useSharedValue(reduceMotion ? 1 : 0);
   const spin = useSharedValue(0);
@@ -155,6 +169,7 @@ export function BattleResult({
           {xpText}
         </Text>
       </View>
+      {loot ? <LootReveal loot={loot} reduceMotion={reduceMotion} /> : null}
       {lines.map((line) => (
         <Text key={line} style={styles.line}>
           {line}
@@ -178,6 +193,67 @@ export function BattleResult({
           <Text style={styles.undoText}>Desfazer</Text>
         </Pressable>
       ) : null}
+    </View>
+  );
+}
+
+/**
+ * Baú que treme e abre no item que caiu. A moldura tem a cor da raridade.
+ * Reduzir movimento mostra o item direto.
+ */
+function LootReveal({ loot, reduceMotion }: { loot: LootView; reduceMotion: boolean }) {
+  const open = useSharedValue(reduceMotion ? 1 : 0);
+  const wobble = useSharedValue(0);
+  useEffect(() => {
+    if (reduceMotion) return;
+    wobble.value = withDelay(
+      500,
+      withSequence(
+        withTiming(-1, { duration: 70 }),
+        withTiming(1, { duration: 70 }),
+        withTiming(-1, { duration: 70 }),
+        withTiming(1, { duration: 70 }),
+        withTiming(0, { duration: 60 }),
+      ),
+    );
+    open.value = withDelay(860, withSpring(1, { damping: 10, stiffness: 170 }));
+  }, [open, reduceMotion, wobble]);
+
+  const chestStyle = useAnimatedStyle(() => ({
+    opacity: 1 - Math.min(1, open.value * 1.6),
+    transform: [{ rotate: `${wobble.value * 8}deg` }, { scale: 1 + open.value * 0.3 }],
+  }));
+  const itemStyle = useAnimatedStyle(() => ({
+    opacity: Math.min(1, open.value * 1.4),
+    transform: [{ scale: 0.4 + open.value * 0.6 }],
+  }));
+  const frame = loot.rarityColor ?? colors.amber;
+
+  return (
+    <View
+      style={styles.loot}
+      accessible
+      accessibilityLabel={`Item novo: ${loot.name}${loot.rarityLabel ? `, ${loot.rarityLabel}` : ''}. ${loot.effect}`}
+    >
+      <View style={[styles.lootSocket, { borderColor: frame }]}>
+        <Animated.View style={[styles.lootLayer, itemStyle]}>
+          <Image source={loot.art} style={styles.lootArt} resizeMode="contain" />
+        </Animated.View>
+        <Animated.View style={[styles.lootLayer, chestStyle]}>
+          <Image source={loot.chest} style={styles.lootArt} resizeMode="contain" />
+        </Animated.View>
+      </View>
+      <View style={styles.lootCopy}>
+        {loot.rarityLabel ? (
+          <Text style={[styles.lootRarity, { color: frame }]}>{loot.rarityLabel}</Text>
+        ) : null}
+        <Text style={styles.lootName} numberOfLines={1}>
+          {loot.name}
+        </Text>
+        <Text style={styles.lootEffect} numberOfLines={1}>
+          {loot.effect}
+        </Text>
+      </View>
     </View>
   );
 }
@@ -329,6 +405,31 @@ const styles = StyleSheet.create({
   tutorialButtonText: { fontSize: 14, fontWeight: '800', color: colors.amberSoft },
 
   result: { flex: 1, justifyContent: 'flex-end', alignItems: 'center', gap: space.sm },
+  loot: {
+    alignSelf: 'stretch',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.md,
+    padding: space.sm,
+    borderRadius: radius.lg,
+    backgroundColor: 'rgba(15, 23, 42, 0.7)',
+  },
+  // Raio interno = externo − padding (regra 14).
+  lootSocket: {
+    width: 64,
+    height: 64,
+    borderRadius: radius.lg - space.sm,
+    borderWidth: 2,
+    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  lootLayer: { position: 'absolute', alignItems: 'center', justifyContent: 'center' },
+  lootArt: { width: 50, height: 50 },
+  lootCopy: { flex: 1, minWidth: 0 },
+  lootRarity: { fontSize: 12, fontWeight: '900', letterSpacing: 1, textTransform: 'uppercase' },
+  lootName: { fontSize: 16, fontWeight: '900', color: colors.text },
+  lootEffect: { fontSize: 13, color: colors.textMuted },
   hero: { alignItems: 'center', justifyContent: 'center', minHeight: 130, alignSelf: 'stretch' },
   rays: {
     position: 'absolute',

@@ -265,3 +265,24 @@ describe('conquistas', () => {
     assert.deepEqual(newlyUnlockedAchievements(after, after), []);
   });
 });
+
+describe('sanitizeState — loot, chefe e música', () => {
+  it('save antigo ganha mochila inicial, chefe zerado e música média', () => {
+    const legacy = startJourney('Ana', 'MAGE') as unknown as Record<string, unknown>;
+    delete legacy.inventory;
+    delete legacy.weeklyBoss;
+    const state = sanitizeState({ ...legacy, settings: { soundEnabled: true } });
+    assert.ok(state);
+    assert.deepEqual(state.inventory.gear, []);
+    assert.equal(state.inventory.potions['potion.water'], 1);
+    assert.equal(state.weeklyBoss.wins, 0);
+    assert.equal(state.settings.musicVolume, 0.6);
+  });
+
+  it('volume de música fora da lista volta para o padrão', () => {
+    const state = sanitizeState({ ...startJourney('Ana', 'MAGE'), settings: { musicVolume: 7 } });
+    assert.equal(state?.settings.musicVolume, 0.6);
+    const off = sanitizeState({ ...startJourney('Ana', 'MAGE'), settings: { musicVolume: 0 } });
+    assert.equal(off?.settings.musicVolume, 0);
+  });
+});

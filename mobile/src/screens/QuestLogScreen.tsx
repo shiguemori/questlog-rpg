@@ -13,7 +13,9 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PressScale } from '../motion/PressScale';
+import { BossCard } from '../components/BossCard';
 import { CharacterArt } from '../components/CharacterArt';
+import { heroArtKey } from '../domain/loot';
 import { HeroSheet } from '../components/HeroSheet';
 import { HeroVitalsBar } from '../components/HeroVitalsBar';
 import { QuestCreateModal } from '../components/QuestCreateModal';
@@ -79,6 +81,8 @@ interface QuestLogScreenProps {
   onCalendarDay: () => void;
   /** Muda de valor para abrir a folha do herói (ex.: "Usar os pontos" do level up). */
   heroRequest?: number;
+  /** Abre a luta contra o chefe da semana. */
+  onStartBoss?: () => void;
 }
 
 interface QuestSection {
@@ -114,6 +118,7 @@ export function QuestLogScreen({
   onShareWeek,
   onCalendarDay,
   heroRequest = 0,
+  onStartBoss,
 }: QuestLogScreenProps) {
   const insets = useSafeAreaInsets();
   const today = useLocalToday();
@@ -376,7 +381,7 @@ export function QuestLogScreen({
           <View style={styles.heroStage}>
             <View style={styles.heroShadow} />
             <CharacterArt
-              assetKey={`hero.${character.characterClass.toLowerCase()}`}
+              assetKey={heroArtKey(character.characterClass, state.inventory)}
               size={96}
               accessibilityLabel={`${classLabel} ${character.name}`}
             />
@@ -417,6 +422,14 @@ export function QuestLogScreen({
             XP hoje {daily.xpQuestsToday}/{daily.xpQuestsLimit}
           </Text>
         </View>
+        {onStartBoss ? (
+          <BossCard
+            boss={state.weeklyBoss}
+            level={character.level}
+            now={new Date()}
+            onStart={onStartBoss}
+          />
+        ) : null}
       </View>
 
       {storageNotice ? (

@@ -4,6 +4,8 @@ import { MAX_XP_QUESTS_PER_DAY } from './antiFarm';
 import { completeQuest, planQuestCompletion } from './completeQuest';
 import { CLASS_DEFAULTS, INITIAL_MAX_XP } from './constants';
 import { localIsoDate } from './dates';
+import { emptyWeeklyBoss } from './boss';
+import { emptyInventory } from './loot';
 import { defaultPlayerSettings } from './state';
 import type { AppState, Quest } from './types';
 import { xpProgressRatio } from './xpBar';
@@ -43,6 +45,8 @@ function makeState(overrides: Partial<AppState> = {}): AppState {
       dailyCompletionsDate: null,
       completionDays: [],
     },
+    inventory: emptyInventory(),
+    weeklyBoss: emptyWeeklyBoss(),
     settings: defaultPlayerSettings(),
     ...overrides,
   };

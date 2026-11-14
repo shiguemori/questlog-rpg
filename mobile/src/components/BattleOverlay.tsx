@@ -22,13 +22,29 @@ import {
   useSafeAreaInsets,
   type EdgeInsets,
 } from 'react-native-safe-area-context';
-import { MAX_BATTLE_TURNS, type BattleSkill, type BattleState } from '../domain/battle';
+import { BOSS_TRAIT, turnLimitFor, type BattleSkill, type BattleState } from '../domain/battle';
+import type { PotionId } from '../domain/loot';
+import type { MusicVolume } from '../domain/types';
+import { useBattleMusic } from '../platform/battleMusic';
 import { useBattleCues } from '../platform/battleCues';
 import { useReducedMotion } from '../platform/feedback';
 import { battle as tone, colors } from '../theme/colors';
 import { space } from '../theme/spacing';
-import { EnemyPlate, HeroBar, SkillDetail, SkillGrid, TurnPill } from './battle/BattleHud';
-import { BattleBanner, BattleResult, BattleTutorial, Confetti } from './battle/BattleMoments';
+import {
+  EnemyPlate,
+  HeroBar,
+  PotionRow,
+  SkillDetail,
+  SkillGrid,
+  TurnPill,
+} from './battle/BattleHud';
+import {
+  BattleBanner,
+  BattleResult,
+  BattleTutorial,
+  Confetti,
+  type LootView,
+} from './battle/BattleMoments';
 import { ActorStage, EVENT_STEP_MS, WINDUP_MS } from './battle/BattleStage';
 import { SkillCastLayer } from './battle/SkillCast';
 
@@ -38,12 +54,18 @@ export interface BattleRewardView {
   habitLine: string | null;
   /** Vida guardada depois da luta, ex.: "Vida 23/48 · enche em 3h". */
   vitalsLine?: string | null;
+  /** Item que o monstro deixou. */
+  loot?: LootView | null;
+  /** Troca a frase do XP (ex.: derrota contra o chefe). */
+  summary?: string;
 }
 
 export interface BattleOverlayProps {
   battle: BattleState | null;
   reward: BattleRewardView | null;
   onMove: (moveId: string) => void;
+  /** Usar poção da mochila (gasta o turno). */
+  onItem?: (potionId: PotionId) => void;
   onDismiss: () => void;
   onUndo?: () => void;
   /** Som de golpes (Ajustes → Som). */
@@ -51,6 +73,8 @@ export interface BattleOverlayProps {
   /** Primeira batalha: mostra como lutar até a pessoa agir ou dispensar. */
   showTutorial?: boolean;
   onTutorialDone?: () => void;
+  /** Trilha da arena (Ajustes → Música). 0 = desligada. */
+  musicVolume?: MusicVolume;
 }
 
 /**
@@ -63,10 +87,19 @@ const ARENA: Record<string, ImageSourcePropType> = {
   'enemy.health': require('../../assets/battle/arena-health.jpg'),
   'enemy.home': require('../../assets/battle/arena-home.jpg'),
   'enemy.other': require('../../assets/battle/arena-other.jpg'),
+  'enemy.boss': require('../../assets/battle/arena-boss.jpg'),
 };
+
+/** `enemy.study+elite` usa a arena do `enemy.study`. */
+export function arenaKeyOf(assetKey: string): string {
+  const base = assetKey.split('+')[0];
+  return base in ARENA ? base : 'enemy.other';
+}
 
 /** Altura do painel de baixo: legenda, barra do herói, 3 linhas de golpes. */
 const PANEL_MIN = 352;
+/** A fileira de poções, quando o herói tem alguma. */
+const POTION_ROW = 48;
 
 export function BattleOverlay(props: BattleOverlayProps) {
   const { battle, reward, onDismiss } = props;
@@ -102,11 +135,13 @@ function BattleScreen({
   battle,
   reward,
   onMove,
+  onItem,
   onDismiss,
   onUndo,
   soundEnabled = false,
   showTutorial = false,
   onTutorialDone,
+  musicVolume = 0,
   outerInsets,
 }: BattleOverlayProps & { battle: BattleState; outerInsets: EdgeInsets }) {
   const inner = useSafeAreaInsets();
@@ -139,6 +174,8 @@ function BattleScreen({
   const showResult = finished && revealed;
 
   useBattleCues(battle.events, soundEnabled, reduceMotion);
+  const arenaKey = arenaKeyOf(battle.enemy.assetKey);
+  useBattleMusic(arenaKey, musicVolume, finished);
 
   useEffect(() => {
     entrance.value = withTiming(1, {
@@ -194,11 +231,16 @@ function BattleScreen({
   }));
 
   // A arena vai até o topo da tela; o painel de baixo fica com o que precisa.
-  const arenaHeight = Math.round(Math.max(300, Math.min(560, height - insets.bottom - PANEL_MIN)));
+  const hasPotions = battle.potions['potion.water'] + battle.potions['potion.coffee'] > 0;
+  const panelMin = PANEL_MIN + (hasPotions ? POTION_ROW : 0);
+  const arenaHeight = Math.round(Math.max(300, Math.min(560, height - insets.bottom - panelMin)));
   const stageTop = insets.top + 64;
   const stageHeight = arenaHeight - stageTop;
   const heroSize = Math.round(Math.max(118, Math.min(220, stageHeight * 0.56, width * 0.46)));
-  const enemySize = Math.round(Math.min(heroSize * 1.06, width * 0.5));
+  const boss = battle.variant === 'BOSS';
+  const enemySize = Math.round(
+    Math.min(heroSize * (boss ? 1.3 : 1.06), width * (boss ? 0.56 : 0.5)),
+  );
   const heroStage = { w: heroSize * 1.25, h: heroSize * 1.12 };
   const enemyStage = { w: enemySize * 1.25, h: enemySize * 1.12 };
   const heroPos = { left: width * 0.02, bottom: space.sm };
@@ -215,9 +257,14 @@ function BattleScreen({
     x: width - enemyPos.right - enemyStage.w / 2,
     y: enemyPos.top + enemyStage.h * 0.55,
   };
-  const arena = ARENA[battle.enemy.assetKey] ?? ARENA['enemy.other'];
+  const arena = ARENA[arenaKey];
+  // O chefe muda de fase: a faixa anuncia, como na abertura.
+  const phaseShift = battle.events.find(
+    (event) => event.kind === 'TRAIT' && event.skillName === BOSS_TRAIT.name,
+  );
   const lines = battle.log.filter((entry) => entry.text !== battle.victoryTitle).slice(-2);
-  const turnShown = Math.min(MAX_BATTLE_TURNS, battle.turn + (finished ? 0 : 1));
+  const turnLimit = turnLimitFor(battle);
+  const turnShown = Math.min(turnLimit, battle.turn + (finished ? 0 : 1));
   const intro = battle.turn === 0 && battle.events.length === 0 && !finished;
 
   const resultLines = [reward?.vitalsLine, reward?.habitLine].filter(
@@ -254,6 +301,7 @@ function BattleScreen({
             size={enemySize}
             reduceMotion={reduceMotion}
             knockedOut={battle.enemy.hp <= 0}
+            celebrating={showResult && !won}
           />
         </Animated.View>
         <Animated.View
@@ -265,6 +313,7 @@ function BattleScreen({
             size={heroSize}
             reduceMotion={reduceMotion}
             knockedOut={battle.hero.hp <= 0}
+            celebrating={showResult && won}
           />
         </Animated.View>
         <SkillCastLayer
@@ -279,7 +328,7 @@ function BattleScreen({
           <EnemyPlate actor={battle.enemy} reduceMotion={reduceMotion} />
           <TurnPill
             label={finished ? 'Fim da luta' : waiting ? `${battle.enemy.name} age` : 'Sua vez'}
-            turn={`Turno ${turnShown} de ${MAX_BATTLE_TURNS}`}
+            turn={`Turno ${turnShown} de ${turnLimit}`}
             mine={!waiting && !finished}
             reduceMotion={reduceMotion}
           />
@@ -290,6 +339,13 @@ function BattleScreen({
         ) : null}
         {intro ? (
           <BattleBanner text={battle.log[0]?.text ?? ''} reduceMotion={reduceMotion} />
+        ) : null}
+        {phaseShift ? (
+          <BattleBanner
+            key={phaseShift.seq}
+            text="Fase 2: o despertador disparou!"
+            reduceMotion={reduceMotion}
+          />
         ) : null}
         <Animated.View pointerEvents="none" style={[styles.critFlash, flashStyle]} />
       </Animated.View>
@@ -305,6 +361,7 @@ function BattleScreen({
             onDismiss={onDismiss}
             onUndo={onUndo}
             reduceMotion={reduceMotion}
+            loot={won ? reward?.loot : null}
           />
         ) : (
           <>
@@ -323,6 +380,14 @@ function BattleScreen({
               ) : null}
             </View>
             <HeroBar actor={battle.hero} reduceMotion={reduceMotion} />
+            <PotionRow
+              battle={battle}
+              disabled={waiting || finished}
+              onUse={(id) => {
+                if (showTutorial) onTutorialDone?.();
+                onItem?.(id);
+              }}
+            />
             <View style={styles.controls}>
               <SkillGrid
                 hero={battle.hero}
@@ -353,6 +418,7 @@ function BattleScreen({
 }
 
 function rewardCopy(won: boolean, reward: BattleRewardView | null): string {
+  if (reward?.summary) return reward.summary;
   if (!reward || reward.xpAwarded <= 0) return 'A quest conta, sem XP desta vez.';
   if (won && !reward.reduced) return `+${reward.xpAwarded} XP`;
   return `A quest conta. +${reward.xpAwarded} XP, sem bônus.`;

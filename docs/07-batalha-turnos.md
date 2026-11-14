@@ -110,7 +110,53 @@ A vida (30 / 46 / 50) e os atributos vêm da dificuldade e sobem com o nível do
 
 O jeito age no começo do turno do monstro (`applyEnemyTrait`), vira um evento `TRAIT` (texto "JEITO DO MONSTRO" em cima dele) e aparece na placa do monstro. Muda a melhor jogada de cada luta: contra o Caos, termine rápido; contra a Preguiça, não fique só defendendo.
 
+### Elite
+
+Em luta média ou difícil, a partir do nível 2, o monstro tem 12% de chance de vir de **elite** (`rollEnemyVariant`, pela semente): vida ×1,25, +1 em força, inteligência e vitalidade, arte própria (roxo e rosa com coroa dourada, `enemy.*+elite`) e "Elite ·" na placa. Elite sempre deixa item.
+
+### Chefe da semana (`boss.ts`)
+
+**Procrastinação**, um despertador gigante derretendo em cima de uma pilha de lembretes adiados.
+
+- Aparece a partir do **nível 3**, depois de **5 vitórias** na semana (segunda a domingo). O cartão na tela principal mostra o progresso e, quando liberado, o botão Enfrentar.
+- Uma tentativa por dia. Vencido, some até a segunda seguinte.
+- Vida de difícil ×2,1, ataque de monstro médio um nível abaixo: a luta é longa, não injusta. Limite de 18 turnos (`BOSS_MAX_TURNS`).
+- **Fase 1:** Soneca do Despertador, Depois Eu Faço (cansado), Só Mais um Vídeo (trava), Desculpa Perfeita (escudo).
+- **Fase 2** (`TWO_PHASES`, na metade da vida): recupera 10% da vida, +15% de dano, troca para Alarme Estridente (2 golpes), Prazo Estourado (estresse), Pânico da Última Hora (pesado). A arte muda para a versão em brasa e uma faixa anuncia a fase.
+- Vitória: `120 + 15 × (nível − 1)` de XP e sempre um equipamento raro ou épico. Arena própria (quarto do estudo com luz vermelha e relógios na parede) e trilha própria.
+
 IA (não aparece na tela): com ≤45% de vida prefere cura/escudo; em turnos alternados aplica um status que o herói ainda não tem; no resto usa o golpe mais forte disponível. O cartão de cada quest mostra o monstro da categoria.
+
+## Loot, mochila e poções (`loot.ts`)
+
+Depois da vitória, o monstro pode deixar um item. O sorteio usa a semente da luta (mesma luta, mesmo item). Não existe loja: item só vem de luta.
+
+| Fonte | Chance de cair algo | Equipamento × poção | Raridade do equipamento |
+|-------|---------------------|---------------------|-------------------------|
+| Luta comum | fácil 30%, médio 45%, difícil 60% | 35% equipamento | comum 70, raro 27, épico 3 |
+| Elite | 100% | 70% equipamento | comum 30, raro 55, épico 15 |
+| Chefe | 100% | só equipamento | raro 40, épico 60 |
+
+Equipamento repetido não cai: vira outra peça ou, com a coleção completa, poção.
+
+| Espaço | Item | Raridade | Bônus |
+|--------|------|----------|-------|
+| Chapéu | Boné da Sorte | Comum | +3% crítico |
+| Chapéu | Gorro de Lã | Comum | +6 vida |
+| Chapéu | Capacete de Obra | Raro | +15% escudo, +4 vida |
+| Chapéu | Chapéu Pontudo | Raro | +3 energia, +4% dano |
+| Chapéu | Coroa da Rotina | Épico | +8% dano, +4% crítico |
+| Amuleto | Trevo de Quatro Folhas | Comum | +4% crítico |
+| Amuleto | Coração de Pelúcia | Comum | +8 vida |
+| Amuleto | Ampulheta | Raro | +4 energia |
+| Amuleto | Estrela Dourada | Épico | +10% dano |
+
+- O **chapéu aparece no herói**: na luta, na tela principal, na folha e no level up (`hero.mage+crown`). A primeira peça de cada espaço já vai para o corpo.
+- O bônus do equipamento soma com o dos talentos (`mergeBonus`).
+- **Poções:** Garrafa d'Água (35% da vida) e Café Forte (60% da energia). Usar gasta o turno; no máximo 2 por luta; teto de 9 de cada. Saves antigos começam com uma água. As gastas saem da mochila mesmo na derrota (`applyBattleSpoils`).
+- **Mochila** na folha do herói: o que está vestido, a coleção (o que falta aparece em silhueta) e as poções.
+- Fim da luta: o baú treme e abre no item, com a moldura na cor da raridade (cinza, azul, roxo).
+- Save: `inventory: { gear: GearId[], equipped: { HEAD, CHARM }, potions: { 'potion.water', 'potion.coffee' } }` e `weeklyBoss: { weekKey, wins, beatenWeek, triedOn }` (YYYY-MM-DD). Item inventado, repetido ou vestido sem ter é descartado na leitura.
 
 ## Vida entre lutas
 
@@ -135,18 +181,29 @@ Crítico e esquiva usam um gerador com semente (`mulberry32`) guardado no estado
 | Médio | 66–100% | 99–100% | 99–100% | 96–100% |
 | Difícil | 23–100% | 81–100% | 58–100% | 40–100% |
 
+`npx tsx scripts/simulate-battles.ts especiais` simula elite (difícil) e chefe, com 2 águas e 1 café:
+
+| | Nível 3 | Nível 5 | Nível 8 |
+|-|---------|---------|---------|
+| Elite (difícil) | 60–68% | 39–88% | 60–84% |
+| Chefe | 64–99% | 83–91% | 59–99% |
+
+No nível 2 o chefe venceria quase sempre o Mago e o Ladino (pouca vida para uma luta longa); por isso ele só aparece no nível 3.
+
 O que mudou nesse ajuste: difícil começa mais baixo (vida 50, atributos 4) e sobe a cada nível; o Ladino ganhou esquiva +10 (passiva), Atalho mais forte e que rouba 25% do dano, e Lembrete Chato incomoda mais; Lista Riscada e Avalanche bateram um pouco menos. Pontos fracos que ficam por escolha: Ladino contra Distração (dano mental, a esquiva não ajuda) e Guerreiro contra Caos (o dano acumulado pune lutas longas). O jogador real usa Respirar Fundo e escudo; o simulado não, então os números reais tendem a ser melhores.
 
 ## Arte e efeitos
 
 - Heróis são pessoas comuns: Guerreiro de bandana com vassoura e tampa de panela, Mago estudante de óculos com café e agenda, Ladino de boné, moletom e mochila.
-- Personagens modelados no Blender por código (formas estilizadas, sombreamento toon em 3 faixas, contraluz e contorno de casco invertido). Fonte: `assets/blender/sources/battle-characters.blend`; o script do kit está no texto `qlkit` dentro do arquivo.
-- Renders 1024×1024 com fundo transparente em `mobile/assets/battle/` (`hero-*.png`, `enemy-*.png`), ligados por `CharacterArt` pelo `assetKey`. Heróis olham para a direita, monstros para a esquerda. O topo da tela principal, a folha do herói, o level up e o cartão de cada quest usam os mesmos retratos.
+- Personagens modelados no Blender por código (formas estilizadas, sombreamento toon em 3 faixas, contraluz e contorno de casco invertido). Fonte: `assets/blender/sources/battle-characters.blend` (no Git LFS); o kit está no texto `qlkit` e as poses no texto `qlpose`.
+- **Poses:** cada personagem tem 6 quadros com a câmera fixa: parado, preparo, golpe, apanhando, vitória e nocaute. As partes do corpo giram em volta do ombro e dos pés (`hero_pose`, `enemy_pose`), e o golpe aponta para o adversário na tela. Variações: herói com cada chapéu (5), monstro de elite, chefe e chefe na fase 2. São 180 quadros 640×640 em WebP (~3,6 MB) em `mobile/assets/actors/`, mais retratos recortados em `actors/portrait/` e ícones dos itens em `mobile/assets/items/`.
+- `scripts/gen-actor-art.py` converte os PNG do Blender em WebP e gera `src/components/actorArt.ts` (registro com `require` estático). `CharacterArt` usa o retrato fora da luta e, na arena (`mode="stage"`), deixa as 6 poses montadas e mostra só a atual: a troca não pisca. O `ActorStage` troca a pose no mesmo tempo da animação (preparo → golpe → parado; apanha ao levar dano; braços para cima em golpe em si mesmo; vitória e nocaute no fim).
 - **Cenários (v2):** 5 cômodos inteiros com luz de verdade: quarto de estudo à noite (estante, janela com lua, varal de luzinhas, escrivaninha com notebook e luminária), escritório no pôr do sol (janelão com prédios, dois monitores, pilhas de papel), academia em casa de manhã (sol entrando, tapete de yoga, halteres), cozinha à tarde (pia com louça, geladeira com ímãs, cesto de roupa) e parque à noite (pinheiros, poste, vaga-lumes). Materiais com luz (Principled), EEVEE com sombras e raytracing, brilho no compositor e AgX. Kit no texto `qlkit2` do `.blend`, raízes `arena2_*`, função `arena_render`. Saída 1080×1350 JPEG (~100–130 KB) em `mobile/assets/battle/arena-*.jpg`.
 - **Tela da luta:** a arena vai de ponta a ponta até o topo, com degradê escuro em cima (para a placa do monstro) e embaixo (para fundir com o painel). Em cima: placa do monstro (nome, vida com marcas a cada 10, nível, jeito próprio, status) e o turno. Embaixo: legenda da ação, barra do herói (vida e energia lado a lado) e os 6 golpes em cartões com ícone grande, custo no canto do ícone e recarga em cima do ícone. O painel reserva 352 de altura; a arena fica com o resto (300–560). Personagens: herói até 220, monstro 6% maior.
 - **Golpe do herói:** recua e encolhe (preparo, 150 ms), estica no avanço, o objeto do golpe sai com rastro (`SkillCast.tsx`), e no alvo: clarão, onda de choque, linhas de impacto e partículas no padrão do elemento (estouro, faíscas que sobem, cacos de gelo, bolhas, fumaça, anel). O alvo pisca branco (cópia da silhueta com `tintColor`), recua e achata. Crítico: tudo maior, número com "CRÍTICO", clarão na arena inteira e tremida.
 - **Escudo** vira uma bolha em volta do lutador enquanto durar. **Travado** mostra estrelinhas girando. Cura e bônus dão um brilho verde. Sombra no chão acompanha pulos e investidas.
 - **Começo e fim:** faixa "Fulano apareceu!" cruza a arena; monstro desce e herói entra pela esquerda. O resultado espera a última animação; na vitória, raios girando, confete e o XP contando.
+- **Trilha** (`platform/battleMusic.ts`): um loop por arena e um do chefe, gerados por `scripts/gen-music.py` (numpy + ffmpeg, MP3 64 kbps, 108–193 KB). Entra e sai com fade e abaixa no resultado. Ajustes → Música da batalha: desligada, baixa, média (padrão) ou alta; o volume alto fica abaixo dos efeitos.
 - **Som e vibração** (`platform/battleCues.ts`): sons curtos gerados por código em `mobile/assets/sfx/` (golpe, crítico, cura, escudo, deslocamento). Vibração leve ao bater, média ao apanhar, forte no crítico. Som só com Ajustes → Som ligado.
 - **Primeira luta:** dica "Como lutar" (3 linhas) até a pessoa usar um golpe ou tocar em Entendi (`settings.battleTutorialDone`).
 - **Level up:** retrato do herói pulando, o nível grande, o que ganhou (+2 atributos, +1 talento), a camada nova da árvore quando abre, confete, e "Usar os pontos" abre a folha do herói.
@@ -173,6 +230,7 @@ npm install
 npx expo start -c
 ```
 
+- Para ver o chefe rápido: herói no nível 3 ou mais e 5 vitórias na semana.
 - Fácil com o ataque grátis → vence. Difícil no nível 1 pede estratégia (escudo, Respirar Fundo).
 - Segure um golpe para ler o que ele faz. Use Respirar Fundo ou escudo quando a vida cair.
 - No nível 2, abra a folha do herói → Talentos e aprenda o primeiro talento; em Golpes, troque o que vai para a luta.

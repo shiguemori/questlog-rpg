@@ -7,10 +7,13 @@ import type {
   Character,
   CharacterClass,
   Difficulty,
+  MusicVolume,
   PlayerSettings,
   Quest,
   UserStats,
 } from './types';
+import { emptyWeeklyBoss, sanitizeWeeklyBoss } from './boss';
+import { emptyInventory, sanitizeInventory } from './loot';
 import { clampDailyGoalTarget } from './rewards';
 import { sanitizeVitals } from './vitals';
 import { LOADOUT_SIZE, sanitizeIdList } from './talents';
@@ -30,8 +33,11 @@ export function defaultPlayerSettings(): PlayerSettings {
     streakShieldArmed: false,
     streakShieldUsedOn: null,
     battleTutorialDone: false,
+    musicVolume: 0.6,
   };
 }
+
+const MUSIC_VOLUMES: readonly MusicVolume[] = [0, 0.3, 0.6, 1];
 
 const DIFFICULTIES: Difficulty[] = ['EASY', 'MEDIUM', 'HARD'];
 const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
@@ -63,6 +69,8 @@ export function createInitialState(): AppState {
       completionDays: [],
     },
     settings: defaultPlayerSettings(),
+    inventory: emptyInventory(),
+    weeklyBoss: emptyWeeklyBoss(),
   };
 }
 
@@ -199,6 +207,9 @@ function sanitizeSettings(raw: unknown): PlayerSettings {
     streakShieldArmed: raw.streakShieldArmed === true,
     streakShieldUsedOn: toIsoDay(raw.streakShieldUsedOn),
     battleTutorialDone: raw.battleTutorialDone === true,
+    musicVolume: MUSIC_VOLUMES.includes(raw.musicVolume as MusicVolume)
+      ? (raw.musicVolume as MusicVolume)
+      : base.musicVolume,
   };
 }
 
@@ -243,6 +254,8 @@ export function sanitizeState(raw: unknown): AppState | null {
     quests: sanitizeQuests(raw.quests),
     stats: sanitizeStats(raw.stats),
     settings: sanitizeSettings(raw.settings),
+    inventory: sanitizeInventory(raw.inventory),
+    weeklyBoss: sanitizeWeeklyBoss(raw.weeklyBoss),
   };
 }
 
