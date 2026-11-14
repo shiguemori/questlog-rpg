@@ -1,5 +1,6 @@
 import {
   GEAR,
+  gearEffect,
   lootLabel,
   POTIONS,
   RARITY_LABELS,
@@ -25,8 +26,18 @@ export function lootViewOf(drop: LootDrop | null): LootView | null {
       name: gear.name,
       rarityLabel: RARITY_LABELS[gear.rarity],
       rarityColor: RARITY_COLORS[gear.rarity],
-      effect: gear.effect,
+      effect: gearEffect(drop.id),
       art: ITEM_ART[gear.art],
+      chest: ITEM_ART.chest,
+    };
+  }
+  if (drop.type === 'FRAGMENTS') {
+    return {
+      name: lootLabel(drop),
+      effect: drop.from
+        ? `${GEAR[drop.from].name} repetido virou fragmentos. Use na mochila para aprimorar.`
+        : 'Use na mochila para aprimorar um equipamento.',
+      art: ITEM_ART.fragment,
       chest: ITEM_ART.chest,
     };
   }

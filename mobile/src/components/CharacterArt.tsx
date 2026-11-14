@@ -12,24 +12,38 @@ export type { ActorPose };
  *   Todas as poses ficam montadas e só a atual aparece: a troca é instantânea, sem piscar.
  *
  * Chaves: `hero.mage`, `hero.mage+crown` (com chapéu), `enemy.study`, `enemy.study+elite`,
- * `enemy.boss`, `enemy.boss+phase2`. Chave com chapéu sem arte cai na arte sem chapéu.
+ * `enemy.boss`, `enemy.clutter+phase2`… Chave com chapéu sem arte cai na arte sem chapéu.
+ *
+ * Camadas (`layers`): capa por baixo e arma por cima, renderizadas com a mesma câmera
+ * dos quadros do herói (`layer.mage+cape-red`). Com camada, o retrato usa o quadro parado.
  */
 
 const POSES: readonly ActorPose[] = ['idle', 'windup', 'attack', 'hurt', 'victory', 'ko'];
+const IDLE_ONLY: readonly ActorPose[] = ['idle'];
+
+const BOSS_ART = ['enemy.boss', 'enemy.clutter', 'enemy.couch', 'enemy.meeting'];
 
 /**
  * O quadro da arena tem folga em volta (para braços erguidos e chapéus).
  * O zoom compensa, e o personagem ocupa o mesmo espaço do retrato antigo.
  */
 function stageZoom(assetKey: string): number {
-  if (assetKey.startsWith('enemy.boss')) return 1.2;
+  if (BOSS_ART.includes(assetKey.split('+')[0])) return 1.2;
   return assetKey.startsWith('hero.') ? 1.39 : 1.3;
 }
+
+/** Retrato montado a partir do quadro parado (quando há capa ou arma). */
+const LAYERED_PORTRAIT_ZOOM = 1.75;
 
 function resolveKey(assetKey: string, table: Record<string, unknown>): string | null {
   if (assetKey in table) return assetKey;
   const base = assetKey.split('+')[0];
   return base in table ? base : null;
+}
+
+export interface ArtLayers {
+  under: readonly string[];
+  over: readonly string[];
 }
 
 export interface CharacterArtProps {
@@ -42,6 +56,8 @@ export interface CharacterArtProps {
   /** Quadro da arena em vez do retrato. */
   mode?: 'portrait' | 'stage';
   pose?: ActorPose;
+  /** Capa (por baixo) e arma (por cima) do herói. */
+  layers?: ArtLayers;
 }
 
 export const CharacterArt = memo(function CharacterArt({
@@ -51,14 +67,18 @@ export const CharacterArt = memo(function CharacterArt({
   tint,
   mode = 'portrait',
   pose = 'idle',
+  layers,
 }: CharacterArtProps) {
   const a11y = {
     accessibilityRole: tint ? undefined : ('image' as const),
     accessibilityLabel: tint ? undefined : accessibilityLabel,
     accessibilityIgnoresInvertColors: true,
   };
+  const under = (layers?.under ?? []).filter((entry) => entry in ACTOR_POSES);
+  const over = (layers?.over ?? []).filter((entry) => entry in ACTOR_POSES);
+  const layered = under.length + over.length > 0;
 
-  if (mode === 'portrait') {
+  if (mode === 'portrait' && !layered) {
     const key = resolveKey(assetKey, ACTOR_PORTRAITS);
     if (!key) return null;
     return (
@@ -74,16 +94,24 @@ export const CharacterArt = memo(function CharacterArt({
   const key = resolveKey(assetKey, ACTOR_POSES);
   if (!key) return null;
   const frames = ACTOR_POSES[key];
-  const drawn = size * stageZoom(key);
+  const zoom = mode === 'portrait' ? LAYERED_PORTRAIT_ZOOM : stageZoom(key);
+  const drawn = size * zoom;
   const inset = -(drawn - size) / 2;
-  const frameStyle = { width: drawn, height: drawn, left: inset, top: inset };
+  // Retrato montado: o personagem fica um pouco acima do centro do quadro.
+  const frameStyle = {
+    width: drawn,
+    height: drawn,
+    left: inset,
+    top: mode === 'portrait' ? inset + size * 0.08 : inset,
+  };
+  const shownPose: ActorPose = mode === 'portrait' ? 'idle' : pose;
 
   // Clarão e brilho só precisam da pose atual (o quadro já foi decodificado embaixo).
   if (tint) {
     return (
       <View style={{ width: size, height: size }} pointerEvents="none">
         <Image
-          source={frames[pose]}
+          source={frames[shownPose]}
           style={[styles.frame, frameStyle, { tintColor: tint }]}
           resizeMode="contain"
           fadeDuration={0}
@@ -92,21 +120,32 @@ export const CharacterArt = memo(function CharacterArt({
     );
   }
 
+  const poses = mode === 'portrait' ? IDLE_ONLY : POSES;
+  const stack = (layerKey: string, table: (typeof ACTOR_POSES)[string]) =>
+    poses.map((entry) => (
+      <Image
+        key={`${layerKey}:${entry}`}
+        source={table[entry]}
+        style={[styles.frame, frameStyle, { opacity: entry === shownPose ? 1 : 0 }]}
+        resizeMode="contain"
+        fadeDuration={0}
+      />
+    ));
+
   return (
-    <View style={{ width: size, height: size }} pointerEvents="none" {...a11y}>
-      {POSES.map((entry) => (
-        <Image
-          key={entry}
-          source={frames[entry]}
-          style={[styles.frame, frameStyle, { opacity: entry === pose ? 1 : 0 }]}
-          resizeMode="contain"
-          fadeDuration={0}
-        />
-      ))}
+    <View
+      style={[{ width: size, height: size }, mode === 'portrait' ? styles.clip : null]}
+      pointerEvents="none"
+      {...a11y}
+    >
+      {under.map((layerKey) => stack(layerKey, ACTOR_POSES[layerKey]))}
+      {stack(key, frames)}
+      {over.map((layerKey) => stack(layerKey, ACTOR_POSES[layerKey]))}
     </View>
   );
 });
 
 const styles = StyleSheet.create({
   frame: { position: 'absolute' },
+  clip: { overflow: 'hidden' },
 });

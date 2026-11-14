@@ -1,18 +1,27 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import {
+  bonusText,
+  effectiveRarity,
   equipGear,
   GEAR,
   GEAR_IDS,
+  GEAR_SETS,
   gearBonus,
+  gearEffect,
   MAX_POTIONS_PER_BATTLE,
   POTION_IDS,
   POTIONS,
   RARITY_LABELS,
+  setProgress,
   SLOT_LABELS,
+  SLOTS,
   unequipSlot,
+  upgradeBlock,
+  upgradeCost,
+  upgradeGear,
+  upgradeLevel,
   type GearId,
-  type GearSlot,
 } from '../../domain/loot';
 import type { AppState } from '../../domain/types';
 import { colors } from '../../theme/colors';
@@ -20,23 +29,9 @@ import { radius, space } from '../../theme/spacing';
 import { ITEM_ART } from '../actorArt';
 import { RARITY_COLORS } from '../battle/lootView';
 
-const SLOTS: readonly GearSlot[] = ['HEAD', 'CHARM'];
-
-/** "+3% de crítico, +8 de vida" a partir do que está vestido. */
-function bonusLine(state: AppState): string | null {
-  const bonus = gearBonus(state.inventory);
-  const parts: string[] = [];
-  if (bonus.damagePct) parts.push(`+${bonus.damagePct}% de dano`);
-  if (bonus.critChance) parts.push(`+${bonus.critChance}% de crítico`);
-  if (bonus.maxHp) parts.push(`+${bonus.maxHp} de vida`);
-  if (bonus.maxEnergy) parts.push(`+${bonus.maxEnergy} de energia`);
-  if (bonus.shieldPct) parts.push(`+${bonus.shieldPct}% de escudo`);
-  return parts.length > 0 ? parts.join(', ') : null;
-}
-
 /**
- * Mochila: o que o herói veste (chapéu aparece na arte), a coleção de equipamentos
- * e as poções. Itens ainda não encontrados aparecem em silhueta.
+ * Mochila: o que o herói veste (chapéu, arma e capa aparecem na arte), os conjuntos,
+ * a coleção, os fragmentos para aprimorar e as poções. Item não encontrado fica em silhueta.
  */
 export function Backpack({
   state,
@@ -47,7 +42,10 @@ export function Backpack({
 }) {
   const { inventory } = state;
   const owned = new Set(inventory.gear);
-  const bonus = bonusLine(state);
+  const bonus = bonusText(gearBonus(inventory));
+  const sets = setProgress(inventory);
+  const [selected, setSelected] = useState<GearId | null>(null);
+  const picked = selected && owned.has(selected) ? selected : null;
 
   const toggle = (id: GearId) => {
     const slot = GEAR[id].slot;
@@ -60,43 +58,74 @@ export function Backpack({
     });
   };
 
+  const upgrade = (id: GearId) => {
+    onHeroChange((current) => {
+      const next = upgradeGear(current.inventory, id);
+      return next ? { ...current, inventory: next } : null;
+    });
+  };
+
   return (
     <View style={styles.wrap}>
       <View style={styles.slots}>
         {SLOTS.map((slot) => {
           const id = inventory.equipped[slot];
-          const gear = id ? GEAR[id] : null;
+          const level = id ? upgradeLevel(inventory, id) : 0;
+          const rarity = id ? effectiveRarity(id, level) : null;
           return (
-            <View key={slot} style={styles.slot}>
+            <View
+              key={slot}
+              style={styles.slot}
+              accessible
+              accessibilityLabel={`${SLOT_LABELS[slot]}: ${id ? GEAR[id].name : 'vazio'}`}
+            >
               <View
                 style={[
                   styles.socket,
-                  gear ? { borderColor: RARITY_COLORS[gear.rarity] } : styles.socketEmpty,
+                  rarity ? { borderColor: RARITY_COLORS[rarity] } : styles.socketEmpty,
                 ]}
               >
-                {gear ? (
-                  <Image source={ITEM_ART[gear.art]} style={styles.slotArt} resizeMode="contain" />
+                {id ? (
+                  <Image
+                    source={ITEM_ART[GEAR[id].art]}
+                    style={styles.slotArt}
+                    resizeMode="contain"
+                  />
                 ) : null}
               </View>
               <Text style={styles.slotLabel}>{SLOT_LABELS[slot]}</Text>
-              <Text style={styles.slotName} numberOfLines={2}>
-                {gear ? gear.name : 'Vazio'}
-              </Text>
             </View>
           );
         })}
       </View>
       <Text style={styles.bonus}>
-        {bonus ? `Vestindo: ${bonus}.` : 'Nada vestido. Toque num item para vestir.'}
+        {bonus ? `Vestindo: ${bonus}.` : 'Nada vestido. Toque num item e depois em Vestir.'}
       </Text>
+      {sets.length > 0 ? (
+        <View style={styles.sets}>
+          {sets.map((entry) => (
+            <Text key={entry.set.id} style={[styles.setLine, entry.active && styles.setLineActive]}>
+              {entry.set.name} {entry.worn}/{entry.set.pieces.length}
+              {entry.active
+                ? ` · ${bonusText(entry.set.bonus)}`
+                : ` · com 2 peças: ${bonusText(entry.set.bonus)}`}
+            </Text>
+          ))}
+        </View>
+      ) : null}
 
-      <Text style={styles.section}>
-        Equipamento {inventory.gear.length}/{GEAR_IDS.length}
-      </Text>
+      <View style={styles.sectionRow}>
+        <Text style={styles.section}>
+          Equipamento {inventory.gear.length}/{GEAR_IDS.length}
+        </Text>
+        <Text style={styles.fragments} accessibilityLabel={`${inventory.fragments} fragmentos`}>
+          {inventory.fragments} fragmentos
+        </Text>
+      </View>
       {inventory.gear.length === 0 ? (
         <Text style={styles.empty}>
           Vença lutas para encontrar itens. Monstros de elite e o chefe da semana sempre deixam
-          algo.
+          algo. Peça repetida vira fragmentos.
         </Text>
       ) : null}
       <View style={styles.grid}>
@@ -104,32 +133,34 @@ export function Backpack({
           const gear = GEAR[id];
           const has = owned.has(id);
           const worn = inventory.equipped[gear.slot] === id;
+          const level = upgradeLevel(inventory, id);
+          const rarity = effectiveRarity(id, level);
+          const isPicked = picked === id;
           return (
             <Pressable
               key={id}
               disabled={!has}
-              onPress={() => toggle(id)}
+              onPress={() => setSelected(isPicked ? null : id)}
               style={({ pressed }) => [
                 styles.item,
                 worn && styles.itemWorn,
+                isPicked && styles.itemPicked,
                 pressed && styles.pressed,
               ]}
               accessibilityRole="button"
-              accessibilityState={{ disabled: !has, selected: worn }}
+              accessibilityState={{ disabled: !has, selected: isPicked }}
               accessibilityLabel={
                 has
-                  ? `${gear.name}, ${RARITY_LABELS[gear.rarity]}, ${SLOT_LABELS[gear.slot]}. ${gear.effect}.${worn ? ' Vestido.' : ''}`
+                  ? `${gear.name}, ${RARITY_LABELS[rarity]}, ${SLOT_LABELS[gear.slot]}. ${gearEffect(id, level)}.${worn ? ' Vestido.' : ''}`
                   : `Item ainda não encontrado, ${RARITY_LABELS[gear.rarity]}`
               }
-              accessibilityHint={
-                has ? (worn ? 'Toque para tirar.' : 'Toque para vestir.') : undefined
-              }
+              accessibilityHint={has ? 'Toque para vestir ou aprimorar.' : undefined}
               testID={`gear-${id}`}
             >
               <View
                 style={[
                   styles.itemSocket,
-                  { borderColor: has ? RARITY_COLORS[gear.rarity] : colors.border },
+                  { borderColor: has ? RARITY_COLORS[rarity] : colors.border },
                 ]}
               >
                 <Image
@@ -142,19 +173,22 @@ export function Backpack({
               <Text style={[styles.itemName, !has && styles.itemNameLocked]} numberOfLines={2}>
                 {has ? gear.name : '???'}
               </Text>
-              {has ? (
-                <Text style={styles.itemEffect} numberOfLines={2}>
-                  {gear.effect}
-                </Text>
-              ) : (
-                <Text style={[styles.itemEffect, { color: RARITY_COLORS[gear.rarity] }]}>
-                  {RARITY_LABELS[gear.rarity]}
-                </Text>
-              )}
+              <Text style={[styles.itemMeta, { color: RARITY_COLORS[rarity] }]}>
+                {RARITY_LABELS[has ? rarity : gear.rarity]}
+              </Text>
             </Pressable>
           );
         })}
       </View>
+
+      {picked ? (
+        <GearDetail
+          state={state}
+          id={picked}
+          onToggle={() => toggle(picked)}
+          onUpgrade={() => upgrade(picked)}
+        />
+      ) : null}
 
       <Text style={styles.section}>Poções</Text>
       <Text style={styles.empty}>
@@ -174,7 +208,7 @@ export function Backpack({
               <Image source={ITEM_ART[potion.art]} style={styles.potionArt} resizeMode="contain" />
               <View style={styles.potionCopy}>
                 <Text style={styles.potionName}>{potion.name}</Text>
-                <Text style={styles.itemEffect}>{potion.effect}</Text>
+                <Text style={styles.potionEffect}>{potion.effect}</Text>
               </View>
               <Text style={styles.potionCount}>×{count}</Text>
             </View>
@@ -185,35 +219,121 @@ export function Backpack({
   );
 }
 
+/** Painel da peça escolhida: vestir/tirar (ação principal) e aprimorar. */
+function GearDetail({
+  state,
+  id,
+  onToggle,
+  onUpgrade,
+}: {
+  state: AppState;
+  id: GearId;
+  onToggle: () => void;
+  onUpgrade: () => void;
+}) {
+  const { inventory } = state;
+  const gear = GEAR[id];
+  const level = upgradeLevel(inventory, id);
+  const rarity = effectiveRarity(id, level);
+  const worn = inventory.equipped[gear.slot] === id;
+  const cost = upgradeCost(inventory, id);
+  const block = upgradeBlock(inventory, id);
+  const next = cost != null ? effectiveRarity(id, level + 1) : null;
+  const set = gear.set ? GEAR_SETS[gear.set] : null;
+
+  return (
+    <View style={styles.detail} testID="gear-detail">
+      <View style={styles.detailHead}>
+        <Image source={ITEM_ART[gear.art]} style={styles.detailArt} resizeMode="contain" />
+        <View style={styles.detailCopy}>
+          <Text style={styles.detailName}>{gear.name}</Text>
+          <Text style={[styles.detailRarity, { color: RARITY_COLORS[rarity] }]}>
+            {RARITY_LABELS[rarity]} · {SLOT_LABELS[gear.slot]}
+          </Text>
+          <Text style={styles.detailEffect}>{gearEffect(id, level)}</Text>
+          {set ? <Text style={styles.detailSet}>Conjunto {set.name}</Text> : null}
+        </View>
+      </View>
+      <Pressable
+        onPress={onToggle}
+        style={({ pressed }) => [styles.primary, pressed && styles.pressed]}
+        accessibilityRole="button"
+        testID="gear-toggle"
+      >
+        <Text style={styles.primaryText}>{worn ? 'Tirar' : 'Vestir'}</Text>
+      </Pressable>
+      {cost != null && next ? (
+        <Pressable
+          onPress={onUpgrade}
+          disabled={block != null}
+          style={({ pressed }) => [
+            styles.secondary,
+            block != null && styles.secondaryOff,
+            pressed && styles.pressed,
+          ]}
+          accessibilityRole="button"
+          accessibilityState={{ disabled: block != null }}
+          accessibilityLabel={`Aprimorar para ${RARITY_LABELS[next]} por ${cost} fragmentos`}
+          testID="gear-upgrade"
+        >
+          <Text style={[styles.secondaryText, block != null && styles.secondaryTextOff]}>
+            Aprimorar para {RARITY_LABELS[next]} · {cost} fragmentos
+          </Text>
+          <Text style={styles.secondaryHint}>
+            {block === 'NO_FRAGMENTS'
+              ? `Faltam ${cost - inventory.fragments} fragmentos.`
+              : `Fica ${gearEffect(id, level + 1)}.`}
+          </Text>
+        </Pressable>
+      ) : (
+        <Text style={styles.detailMax}>Raridade máxima.</Text>
+      )}
+    </View>
+  );
+}
+
 const ITEM_PAD = space.sm;
 
 const styles = StyleSheet.create({
   wrap: { gap: space.md },
-  slots: { flexDirection: 'row', gap: space.md },
+  slots: { flexDirection: 'row', gap: space.sm },
   slot: {
     flex: 1,
     alignItems: 'center',
-    gap: 2,
-    padding: space.md,
-    borderRadius: radius.lg,
+    gap: space.xs,
+    paddingVertical: space.sm,
+    borderRadius: radius.md,
     backgroundColor: colors.bgSoft,
   },
   socket: {
-    width: 72,
-    height: 72,
-    borderRadius: radius.lg - space.xs,
+    width: 56,
+    height: 56,
+    borderRadius: Math.max(4, radius.md - space.xs),
     borderWidth: 2,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.bgElevated,
-    marginBottom: space.xs,
   },
   socketEmpty: { borderColor: colors.border, borderStyle: 'dashed' },
-  slotArt: { width: 56, height: 56 },
+  slotArt: { width: 44, height: 44 },
   slotLabel: { fontSize: 12, fontWeight: '800', color: colors.textMuted },
-  slotName: { fontSize: 14, fontWeight: '800', color: colors.text, textAlign: 'center' },
   bonus: { fontSize: 14, color: colors.amberSoft, fontWeight: '700' },
-  section: { marginTop: space.md, fontSize: 13, fontWeight: '800', color: colors.textMuted },
+  sets: { gap: space.xs },
+  setLine: { fontSize: 13, color: colors.textMuted },
+  setLineActive: { color: colors.text, fontWeight: '700' },
+  sectionRow: {
+    marginTop: space.md,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'baseline',
+  },
+  section: { fontSize: 13, fontWeight: '800', color: colors.textMuted },
+  fragments: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: colors.text,
+    fontVariant: ['tabular-nums'],
+  },
   empty: { fontSize: 14, lineHeight: 20, color: colors.textMuted },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },
   item: {
@@ -227,7 +347,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'transparent',
   },
-  itemWorn: { borderColor: colors.amber },
+  itemWorn: { borderColor: colors.border },
+  itemPicked: { borderColor: colors.amber },
   // Raio interno = externo − padding (regra 14).
   itemSocket: {
     width: 60,
@@ -258,7 +379,44 @@ const styles = StyleSheet.create({
   },
   itemName: { fontSize: 12, fontWeight: '800', color: colors.text, textAlign: 'center' },
   itemNameLocked: { color: colors.textMuted },
-  itemEffect: { fontSize: 12, color: colors.textMuted, textAlign: 'center' },
+  itemMeta: { fontSize: 12, fontWeight: '700', textAlign: 'center' },
+  detail: {
+    gap: space.sm,
+    padding: space.md,
+    borderRadius: radius.lg,
+    backgroundColor: colors.bgSoft,
+  },
+  detailHead: { flexDirection: 'row', gap: space.md, alignItems: 'center' },
+  detailArt: { width: 56, height: 56 },
+  detailCopy: { flex: 1, minWidth: 0, gap: 2 },
+  detailName: { fontSize: 16, fontWeight: '800', color: colors.text },
+  detailRarity: { fontSize: 13, fontWeight: '800' },
+  detailEffect: { fontSize: 14, color: colors.text },
+  detailSet: { fontSize: 13, color: colors.textMuted },
+  detailMax: { fontSize: 13, color: colors.textMuted, textAlign: 'center' },
+  primary: {
+    minHeight: 48,
+    borderRadius: radius.md,
+    backgroundColor: colors.amber,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  primaryText: { fontSize: 16, fontWeight: '900', color: colors.bg },
+  secondary: {
+    minHeight: 48,
+    paddingVertical: space.sm,
+    paddingHorizontal: space.md,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 2,
+  },
+  secondaryOff: { opacity: 0.7 },
+  secondaryText: { fontSize: 14, fontWeight: '800', color: colors.text, textAlign: 'center' },
+  secondaryTextOff: { color: colors.textMuted },
+  secondaryHint: { fontSize: 13, color: colors.textMuted, textAlign: 'center' },
   potions: { gap: space.sm },
   potion: {
     flexDirection: 'row',
@@ -271,6 +429,7 @@ const styles = StyleSheet.create({
   potionArt: { width: 44, height: 44 },
   potionCopy: { flex: 1, minWidth: 0 },
   potionName: { fontSize: 15, fontWeight: '800', color: colors.text },
+  potionEffect: { fontSize: 12, color: colors.textMuted },
   potionCount: {
     fontSize: 18,
     fontWeight: '900',

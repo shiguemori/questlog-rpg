@@ -1,6 +1,7 @@
 import { CATEGORIES, XP_REWARDS } from './constants';
 import { localIsoDate } from './dates';
-import type { AppState, Category, Difficulty, Quest } from './types';
+import { isDueAgain, REPEAT_RULES } from './schedule';
+import type { AppState, Category, Difficulty, Quest, RepeatRule } from './types';
 
 export const QUEST_TITLE_MIN_LENGTH = 2;
 export const QUEST_TITLE_MAX_LENGTH = 60;
@@ -40,7 +41,9 @@ export interface NewQuestInput {
   title: string;
   difficulty: Difficulty;
   category: Category;
+  /** Atalho antigo: true = todo dia. */
   recurring?: boolean;
+  repeat?: RepeatRule;
 }
 
 export type AddQuestError = QuestTitleError | 'TOO_MANY_OPEN';
@@ -90,8 +93,18 @@ export function addQuest(
     xp: XP_REWARDS[input.difficulty],
     completed: false,
     createdAt: now.toISOString(),
-    recurring: input.recurring === true,
+    recurring: false,
   };
+  const repeat =
+    input.repeat && REPEAT_RULES.includes(input.repeat)
+      ? input.repeat
+      : input.recurring === true
+        ? 'DAILY'
+        : undefined;
+  if (repeat) {
+    quest.repeat = repeat;
+    quest.recurring = true;
+  }
 
   return { ok: true, quest, state: { ...state, quests: [quest, ...state.quests] } };
 }
@@ -142,28 +155,57 @@ export function editQuest(
   };
 }
 
-export function setQuestRecurring(state: AppState, questId: string, recurring: boolean): AppState {
+/** Troca a repetição da missão. undefined = não repete (a sequência some). */
+export function setQuestRepeat(
+  state: AppState,
+  questId: string,
+  repeat: RepeatRule | undefined,
+): AppState {
   if (!state.quests.some((item) => item.id === questId)) return state;
   return {
     ...state,
-    quests: state.quests.map((item) => (item.id === questId ? { ...item, recurring } : item)),
+    quests: state.quests.map((item) => {
+      if (item.id !== questId) return item;
+      if (!repeat) {
+        const next: Quest = { ...item, recurring: false };
+        delete next.repeat;
+        delete next.streak;
+        delete next.lastDoneOn;
+        return next;
+      }
+      return { ...item, repeat, recurring: true };
+    }),
   };
 }
 
+/** Compatibilidade: liga (todo dia) ou desliga a repetição. */
+export function setQuestRecurring(state: AppState, questId: string, recurring: boolean): AppState {
+  return setQuestRepeat(state, questId, recurring ? 'DAILY' : undefined);
+}
+
 /**
- * Quest diária concluída em um dia anterior volta a ficar aberta.
- * `createdAt` vira agora: o minuto do anti-farm conta de novo.
+ * Missão que repete volta a ficar aberta quando chega a próxima vez dela
+ * (ver schedule.ts). createdAt vira agora: o minuto do anti-farm conta de novo.
  */
 export function reopenDueRecurring(state: AppState, now: Date = new Date()): AppState {
   const today = localIsoDate(now);
   let changed = false;
   const quests = state.quests.map((quest) => {
-    if (!quest.recurring || !quest.completed || !quest.completedAt) return quest;
+    if (!quest.completed || !quest.completedAt) return quest;
+    const rule = quest.repeat ?? (quest.recurring ? 'DAILY' : undefined);
+    if (!rule) return quest;
     const doneOn = localIsoDate(new Date(quest.completedAt));
-    if (doneOn >= today) return quest;
+    if (!isDueAgain(rule, doneOn, today)) return quest;
     changed = true;
-    const { completedAt: _ignored, ...rest } = quest;
-    return { ...rest, completed: false, createdAt: now.toISOString(), recurring: true };
+    const reopened: Quest = {
+      ...quest,
+      completed: false,
+      createdAt: now.toISOString(),
+      recurring: true,
+      repeat: rule,
+    };
+    delete reopened.completedAt;
+    return reopened;
   });
   return changed ? { ...state, quests } : state;
 }

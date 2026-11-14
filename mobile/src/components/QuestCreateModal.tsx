@@ -15,7 +15,8 @@ import { useAnimatedValue } from '../motion/useAnimatedValue';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CATEGORIES, CATEGORY_LABELS, DIFFICULTY_LABELS, XP_REWARDS } from '../domain/constants';
 import { QUEST_TITLE_MAX_LENGTH, validateQuestTitle, type NewQuestInput } from '../domain/quests';
-import type { Category, Difficulty } from '../domain/types';
+import { REPEAT_LABELS } from '../domain/schedule';
+import type { Category, Difficulty, RepeatRule } from '../domain/types';
 import { useReducedMotion } from '../platform/feedback';
 import { colors } from '../theme/colors';
 
@@ -30,6 +31,12 @@ export interface QuestCreateModalProps {
 }
 
 const DIFFICULTIES: Difficulty[] = ['EASY', 'MEDIUM', 'HARD'];
+const REPEAT_CHOICES: readonly { value: RepeatRule | undefined; label: string }[] = [
+  { value: undefined, label: 'Uma vez' },
+  { value: 'DAILY', label: REPEAT_LABELS.DAILY },
+  { value: 'WEEKDAYS', label: REPEAT_LABELS.WEEKDAYS },
+  { value: 'WEEKLY', label: REPEAT_LABELS.WEEKLY },
+];
 const EASE_OUT = Easing.bezier(0.23, 1, 0.32, 1);
 
 /**
@@ -78,6 +85,7 @@ function QuestCreateSheet({
   const [title, setTitle] = useState(initial?.title ?? '');
   const [difficulty, setDifficulty] = useState<Difficulty>(initial?.difficulty ?? 'MEDIUM');
   const [category, setCategory] = useState<Category>(initial?.category ?? 'OTHER');
+  const [repeat, setRepeat] = useState<RepeatRule | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
   const opacity = useAnimatedValue(0);
   const scale = useAnimatedValue(0.95);
@@ -112,7 +120,7 @@ function QuestCreateSheet({
       setError(validation.message);
       return;
     }
-    const submitError = onSubmit({ title: validation.title, difficulty, category });
+    const submitError = onSubmit({ title: validation.title, difficulty, category, repeat });
     if (submitError) {
       setError(submitError);
       return;
@@ -213,6 +221,31 @@ function QuestCreateSheet({
             );
           })}
         </View>
+
+        {lockDifficulty ? null : (
+          <>
+            <Text style={styles.label}>Repetir</Text>
+            <View style={styles.chipRow} accessibilityRole="radiogroup">
+              {REPEAT_CHOICES.map((choice) => {
+                const selected = repeat === choice.value;
+                return (
+                  <Pressable
+                    key={choice.label}
+                    onPress={() => setRepeat(choice.value)}
+                    style={[styles.chip, selected && styles.chipSelected]}
+                    accessibilityRole="radio"
+                    accessibilityState={{ selected, checked: selected }}
+                    testID={`repeat-${choice.value ?? 'NONE'}`}
+                  >
+                    <Text style={[styles.chipText, selected && styles.chipTextSelected]}>
+                      {choice.label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </>
+        )}
 
         <Text style={styles.note}>O XP libera 1 minuto depois de registrar.</Text>
 

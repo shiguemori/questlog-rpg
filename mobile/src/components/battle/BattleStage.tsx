@@ -421,6 +421,7 @@ export function ActorStage({
           accessibilityLabel={actor.name}
           mode="stage"
           pose={shownPose}
+          layers={actor.assetLayers}
         />
         <Animated.View style={[StyleSheet.absoluteFill, glowStyle]}>
           <CharacterArt

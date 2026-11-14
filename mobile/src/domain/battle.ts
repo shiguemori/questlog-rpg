@@ -124,10 +124,16 @@ export interface BattleActor {
   skills: readonly BattleSkill[];
   /** Hook de arte. Ex.: `hero.mage`, `enemy.study`. */
   assetKey: string;
+  /** Camadas da arte: por baixo (capa) e por cima (arma). */
+  assetLayers?: { under: readonly string[]; over: readonly string[] };
   /** Só monstros: o jeito próprio de lutar (ver `ENEMY_TRAITS`). */
   trait?: EnemyTraitId;
   /** O traço que age uma vez por luta já agiu. */
   traitUsed?: boolean;
+  /** Só chefes: qual deles (ver `BOSSES`). */
+  bossId?: BossId;
+  /** Vira duas tarefas: cada golpe sai em dois. */
+  split?: boolean;
 }
 
 /**
@@ -140,6 +146,12 @@ export type EnemyTraitId =
   | 'LAZY_REGEN'
   | 'GROWS'
   | 'VANISH'
+  /** Segundo jeito de cada cômodo (aparece a partir do nível 3). */
+  | 'REFLECT'
+  | 'SPLIT'
+  | 'LATE_RAGE'
+  | 'THORNS'
+  | 'DISTRACT'
   /** Só o chefe: na metade da vida vira a fase 2 (golpes e arte novos). */
   | 'TWO_PHASES';
 
@@ -188,18 +200,74 @@ export const ENEMY_TRAITS: Record<Category, EnemyTrait> = {
   },
 };
 
-export const BOSS_TRAIT: EnemyTrait = {
-  id: 'TWO_PHASES',
-  name: 'Só mais 5 minutos',
-  hint: 'Muda de fase na metade da vida',
-  blurb:
-    'Com metade da vida, o despertador dispara: recupera 15% da vida, ganha +25% de dano e golpes novos.',
+/**
+ * Segundo jeito de lutar de cada cômodo. A partir do nível 3, metade das lutas
+ * vem com ele no lugar do primeiro (a semente decide).
+ */
+export const ENEMY_TRAITS_ALT: Record<Category, EnemyTrait> = {
+  STUDY: {
+    id: 'REFLECT',
+    name: 'Resposta pronta',
+    hint: 'Devolve parte do dano mágico',
+    blurb:
+      'Tem resposta para tudo: devolve 25% do dano mágico que recebe. Golpes físicos não voltam.',
+  },
+  WORK: {
+    id: 'SPLIT',
+    name: 'Vira duas tarefas',
+    hint: 'Ataca 2 vezes na metade da vida',
+    blurb: 'Com metade da vida, a tarefa se divide: cada golpe vira dois, de 60% do dano.',
+  },
+  HEALTH: {
+    id: 'LATE_RAGE',
+    name: 'Cansaço acumula',
+    hint: 'Mais forte se a luta demorar',
+    blurb: 'Depois do 5º turno dela, o cansaço pesa: +40% de dano até o fim da luta.',
+  },
+  HOME: {
+    id: 'THORNS',
+    name: 'Cacos no chão',
+    hint: 'Devolve parte do dano físico',
+    blurb: 'Bater na bagunça machuca: devolve 20% do dano físico que recebe. Magia não volta.',
+  },
+  OTHER: {
+    id: 'DISTRACT',
+    name: 'Puxa a atenção',
+    hint: 'Rouba 2 de energia por turno',
+    blurb: 'Toda vez que age, puxa sua atenção: você perde 2 de energia.',
+  },
 };
 
-export function enemyTraitOf(actor: BattleActor): EnemyTrait | null {
-  if (!actor.trait) return null;
-  if (actor.trait === BOSS_TRAIT.id) return BOSS_TRAIT;
-  return Object.values(ENEMY_TRAITS).find((entry) => entry.id === actor.trait) ?? null;
+/** Segundo jeito só a partir deste nível. */
+export const ALT_TRAIT_MIN_LEVEL = 3;
+export const ALT_TRAIT_CHANCE = 0.5;
+/** Quanto do dano volta em Resposta pronta (magia) e Cacos no chão (físico). */
+export const REFLECT_PCT = 25;
+export const THORNS_PCT = 20;
+/** Vira duas tarefas: cada golpe vira dois, com este percentual do dano. */
+export const SPLIT_DAMAGE_PCT = 60;
+export const LATE_RAGE_TURN = 5;
+export const LATE_RAGE_BONUS = 40;
+export const DISTRACT_ENERGY = 2;
+
+/** Chefes da semana, em rodízio (ver `boss.ts`). */
+export type BossId = 'procrastination' | 'clutter' | 'couch' | 'meeting';
+
+export interface BossDef {
+  id: BossId;
+  name: string;
+  /** Cômodo do chefe: arena-base, música e categoria do bestiário. */
+  home: Category;
+  assetKey: string;
+  skills: readonly BattleSkill[];
+  phase2Skills: readonly BattleSkill[];
+  trait: EnemyTrait;
+  /** Linha do registro quando vira a fase 2. */
+  phaseLine: string;
+  /** Faixa grande da tela na fase 2. */
+  phaseBanner: string;
+  /** Uma frase para o bestiário. */
+  lore: string;
 }
 
 export interface BattleLogEntry {
@@ -283,6 +351,12 @@ export interface StartBattleInput {
   potions?: Partial<PotionStock>;
   /** Chapéu vestido (`cap`, `crown`…). Muda só a arte do herói. */
   heroLook?: string | null;
+  /** Capa e arma vestidas (camadas da arte). */
+  heroLayers?: { under: readonly string[]; over: readonly string[] };
+  /** Chefe desta semana. Padrão: Procrastinação. */
+  bossId?: BossId;
+  /** Jeito do monstro (ver `rollEnemyTrait`). Padrão: o primeiro do cômodo. */
+  trait?: EnemyTraitId;
 }
 
 /** Bônus passivos que a árvore de talentos dá ao herói. */
@@ -390,12 +464,11 @@ export const ELITE_ATTRIBUTE_BONUS = 1;
 export const ELITE_CHANCE = 0.12;
 export const ELITE_MIN_LEVEL = 2;
 
-/** Chefe da semana: luta mais longa, com duas fases. */
+/** Chefe da semana: luta mais longa, com duas fases. `BOSS_NAME` = o primeiro do rodízio. */
 export const BOSS_NAME = 'Procrastinação';
 export const BOSS_HP_MULTIPLIER = 2.1;
 export const BOSS_PHASE2_HEAL_PCT = 10;
 export const BOSS_PHASE2_DAMAGE_BONUS = 15;
-const BOSS_ASSET = 'enemy.boss';
 
 /** Defender existe para todas as classes: segura o próximo golpe e recupera energia. */
 function defendSkill(classKey: string): BattleSkill {
@@ -1147,6 +1220,259 @@ export const BOSS_PHASE2_SKILLS: readonly BattleSkill[] = [
   BOSS_SKILLS[0],
 ];
 
+/** Molde dos chefes: mesmo ritmo da Procrastinação, golpes e status próprios. */
+function bossKit(
+  prefix: string,
+  names: {
+    basic: [string, string];
+    stun: [string, string];
+    debuff: [string, string, 'WEAKEN' | 'POISON'];
+    guard: [string, string, 'SHIELD' | 'REGEN'];
+    double: [string, string];
+    dot: [string, string, 'BURN' | 'POISON' | 'WEAKEN'];
+    heavy: [string, string];
+  },
+): { skills: BattleSkill[]; phase2: BattleSkill[] } {
+  const basic = skill({
+    id: `${prefix}.basic`,
+    name: names.basic[0],
+    tag: 'Dano físico',
+    blurb: names.basic[1],
+    kind: 'PHYSICAL',
+    scaling: 'strength',
+    power: 5,
+    ratio: 0.9,
+    fx: 'IMPACT',
+  });
+  const debuffStatus = names.debuff[2];
+  const debuff = skill({
+    id: `${prefix}.debuff`,
+    name: names.debuff[0],
+    tag: debuffStatus === 'WEAKEN' ? 'Deixa você cansado' : 'Incômodo 3 turnos',
+    blurb: names.debuff[1],
+    kind: 'MAGIC',
+    cooldown: 3,
+    scaling: 'intelligence',
+    power: 2,
+    ratio: 0.4,
+    applies:
+      debuffStatus === 'WEAKEN'
+        ? [{ status: 'WEAKEN', target: 'TARGET', turns: 2, potency: 35 }]
+        : [{ status: 'POISON', target: 'TARGET', turns: 3, potency: 2, potencyRatio: 0.25 }],
+    fx: debuffStatus === 'WEAKEN' ? 'DEBUFF' : 'POISON',
+  });
+  const stun = skill({
+    id: `${prefix}.stun`,
+    name: names.stun[0],
+    tag: 'Trava você',
+    blurb: names.stun[1],
+    kind: 'MAGIC',
+    cooldown: 5,
+    scaling: 'intelligence',
+    power: 2,
+    ratio: 0.5,
+    applies: [{ status: 'STUN', target: 'TARGET', turns: 1 }],
+    fx: 'ARCANE',
+  });
+  const guard =
+    names.guard[2] === 'SHIELD'
+      ? skill({
+          id: `${prefix}.guard`,
+          name: names.guard[0],
+          tag: 'Escudo',
+          blurb: names.guard[1],
+          kind: 'SUPPORT',
+          cooldown: 4,
+          scaling: 'vitality',
+          shield: { power: 6, ratio: 1.6 },
+          fx: 'SHIELD',
+        })
+      : skill({
+          id: `${prefix}.guard`,
+          name: names.guard[0],
+          tag: 'Se cura 3 turnos',
+          blurb: names.guard[1],
+          kind: 'SUPPORT',
+          cooldown: 4,
+          scaling: 'vitality',
+          applies: [{ status: 'REGEN', target: 'SELF', turns: 3, potency: 3, potencyRatio: 0.5 }],
+          fx: 'HEAL',
+        });
+  const double = skill({
+    id: `${prefix}.double`,
+    name: names.double[0],
+    tag: '2 golpes',
+    blurb: names.double[1],
+    kind: 'MAGIC',
+    scaling: 'intelligence',
+    power: 3,
+    ratio: 0.55,
+    hits: 2,
+    fx: 'ARCANE',
+  });
+  const dotStatus = names.dot[2];
+  const dot = skill({
+    id: `${prefix}.dot`,
+    name: names.dot[0],
+    tag:
+      dotStatus === 'BURN'
+        ? 'Estresse 3 turnos'
+        : dotStatus === 'POISON'
+          ? 'Incômodo 3 turnos'
+          : 'Deixa você cansado',
+    blurb: names.dot[1],
+    kind: 'MAGIC',
+    cooldown: 3,
+    scaling: 'intelligence',
+    power: 3,
+    ratio: 0.5,
+    applies:
+      dotStatus === 'WEAKEN'
+        ? [{ status: 'WEAKEN', target: 'TARGET', turns: 2, potency: 35 }]
+        : [{ status: dotStatus, target: 'TARGET', turns: 3, potency: 2, potencyRatio: 0.3 }],
+    fx: dotStatus === 'BURN' ? 'FIRE' : dotStatus === 'POISON' ? 'POISON' : 'DEBUFF',
+  });
+  const heavy = skill({
+    id: `${prefix}.heavy`,
+    name: names.heavy[0],
+    tag: 'Dano pesado',
+    blurb: names.heavy[1],
+    kind: 'PHYSICAL',
+    cooldown: 3,
+    scaling: 'strength',
+    power: 7,
+    ratio: 1.15,
+    fx: 'IMPACT',
+  });
+  return { skills: [basic, debuff, stun, guard], phase2: [double, dot, heavy, basic] };
+}
+
+const CLUTTER_KIT = bossKit('clutter', {
+  basic: ['Pilha de Roupa', 'Joga a pilha de roupa em cima de você.'],
+  debuff: ['Nuvem de Poeira', 'A poeira incomoda por 3 turnos.', 'POISON'],
+  stun: ['Peça no Chão', 'Você pisa numa peça de montar e perde a próxima ação.'],
+  guard: ['Muralha de Caixas', 'Se esconde atrás das caixas e absorve dano.', 'SHIELD'],
+  double: ['Avalanche de Caixas', 'Caixas caem duas vezes, sem parar.'],
+  dot: ['Cheiro de Mofo', 'O mofo deixa você cansado por 2 turnos: −35% de dano.', 'WEAKEN'],
+  heavy: ['Tudo Desaba', 'O armário inteiro vem abaixo.'],
+});
+
+const COUCH_KIT = bossKit('couch', {
+  basic: ['Almofadada', 'Uma almofada pesada na sua cabeça.'],
+  debuff: ['Afundar no Sofá', 'Você fica cansado por 2 turnos: −35% de dano.', 'WEAKEN'],
+  stun: ['Só Mais um Episódio', 'O próximo episódio começa sozinho. Você perde a próxima ação.'],
+  guard: ['Lanchinho', 'Belisca alguma coisa e recupera vida por 3 turnos.', 'REGEN'],
+  double: ['Zapear', 'Troca de canal duas vezes, rápido.'],
+  dot: ['Farelo no Sofá', 'O farelo incomoda por 3 turnos.', 'POISON'],
+  heavy: ['Abraço do Sofá', 'O sofá engole você de uma vez.'],
+});
+
+const MEETING_KIT = bossKit('meeting', {
+  basic: ['Pauta Extra', 'Mais um item na pauta, direto em você.'],
+  debuff: ['Vamos Alinhar', 'Você fica cansado por 2 turnos: −35% de dano.', 'WEAKEN'],
+  stun: ['Pode Repetir?', 'Ninguém ouviu. Você perde a próxima ação explicando de novo.'],
+  guard: ['Ata de 40 Páginas', 'Se protege atrás da ata e absorve dano.', 'SHIELD'],
+  double: ['Responder a Todos', 'Dois e-mails em sequência.'],
+  dot: ['Mais 30 Minutos', 'A reunião estoura: estresse por 3 turnos.', 'BURN'],
+  heavy: ['Oitenta Slides', 'A apresentação inteira de uma vez.'],
+});
+
+export const BOSSES: Record<BossId, BossDef> = {
+  procrastination: {
+    id: 'procrastination',
+    name: 'Procrastinação',
+    home: 'OTHER',
+    assetKey: 'enemy.boss',
+    skills: BOSS_SKILLS,
+    phase2Skills: BOSS_PHASE2_SKILLS,
+    trait: {
+      id: 'TWO_PHASES',
+      name: 'Só mais 5 minutos',
+      hint: 'Muda de fase na metade da vida',
+      blurb:
+        'Com metade da vida, o despertador dispara: recupera 10% da vida, ganha +15% de dano e golpes novos.',
+    },
+    phaseLine: 'O despertador disparou! Procrastinação entra na fase 2.',
+    phaseBanner: 'Fase 2: o despertador disparou!',
+    lore: 'Um despertador derretido que sempre pede mais cinco minutos.',
+  },
+  clutter: {
+    id: 'clutter',
+    name: 'Montanha de Tralha',
+    home: 'HOME',
+    assetKey: 'enemy.clutter',
+    skills: CLUTTER_KIT.skills,
+    phase2Skills: CLUTTER_KIT.phase2,
+    trait: {
+      id: 'TWO_PHASES',
+      name: 'Tudo fora do lugar',
+      hint: 'Muda de fase na metade da vida',
+      blurb:
+        'Com metade da vida, o armário abre: recupera 10% da vida, ganha +15% de dano e golpes novos.',
+    },
+    phaseLine: 'O armário abriu! Montanha de Tralha entra na fase 2.',
+    phaseBanner: 'Fase 2: o armário abriu!',
+    lore: 'Um cesto de roupa que cresceu até virar monstro. Cada caixa é um "depois eu guardo".',
+  },
+  couch: {
+    id: 'couch',
+    name: 'Sedentarismo',
+    home: 'HEALTH',
+    assetKey: 'enemy.couch',
+    skills: COUCH_KIT.skills,
+    phase2Skills: COUCH_KIT.phase2,
+    trait: {
+      id: 'TWO_PHASES',
+      name: 'Afunda no sofá',
+      hint: 'Muda de fase na metade da vida',
+      blurb:
+        'Com metade da vida, o sofá reclina: recupera 10% da vida, ganha +15% de dano e golpes novos.',
+    },
+    phaseLine: 'O sofá reclinou! Sedentarismo entra na fase 2.',
+    phaseBanner: 'Fase 2: o sofá reclinou!',
+    lore: 'Um sofá com controle remoto nas mãos. Quanto mais você senta, mais ele cresce.',
+  },
+  meeting: {
+    id: 'meeting',
+    name: 'Reunião Infinita',
+    home: 'WORK',
+    assetKey: 'enemy.meeting',
+    skills: MEETING_KIT.skills,
+    phase2Skills: MEETING_KIT.phase2,
+    trait: {
+      id: 'TWO_PHASES',
+      name: 'Mais uma pauta',
+      hint: 'Muda de fase na metade da vida',
+      blurb:
+        'Com metade da vida, a reunião estoura o horário: recupera 10% da vida, ganha +15% de dano e golpes novos.',
+    },
+    phaseLine: 'A reunião estourou o horário! Reunião Infinita entra na fase 2.',
+    phaseBanner: 'Fase 2: estourou o horário!',
+    lore: 'Um notebook com mil janelas de chamada. Termina sempre "daqui a pouco".',
+  },
+};
+
+export const BOSS_IDS = Object.keys(BOSSES) as BossId[];
+/** Compatibilidade: o traço do primeiro chefe. */
+export const BOSS_TRAIT: EnemyTrait = BOSSES.procrastination.trait;
+
+export function enemyTraitOf(actor: BattleActor): EnemyTrait | null {
+  if (!actor.trait) return null;
+  if (actor.trait === 'TWO_PHASES') return BOSSES[actor.bossId ?? 'procrastination'].trait;
+  return (
+    [...Object.values(ENEMY_TRAITS), ...Object.values(ENEMY_TRAITS_ALT)].find(
+      (entry) => entry.id === actor.trait,
+    ) ?? null
+  );
+}
+
+/** Jeito de lutar do monstro desta luta. A semente decide entre os dois do cômodo. */
+export function rollEnemyTrait(seed: number, category: Category, heroLevel: number): EnemyTraitId {
+  if (heroLevel < ALT_TRAIT_MIN_LEVEL) return ENEMY_TRAITS[category].id;
+  const [value] = nextRandom((seed ^ 0x7a17) >>> 0);
+  return value < ALT_TRAIT_CHANCE ? ENEMY_TRAITS_ALT[category].id : ENEMY_TRAITS[category].id;
+}
+
 // ---------------------------------------------------------------------------
 // Atributos → números da luta
 // ---------------------------------------------------------------------------
@@ -1361,7 +1687,8 @@ function takeDamage(actor: BattleActor, amount: number): { actor: BattleActor; a
 function strike(draft: Draft, userSide: BattleSide, entry: BattleSkill): number {
   const targetSide = opposite(userSide);
   let dealt = 0;
-  const hits = entry.hits ?? 1;
+  const splitting = actorOf(draft.state, userSide).split === true;
+  const hits = (entry.hits ?? 1) * (splitting ? 2 : 1);
   for (let hit = 0; hit < hits; hit += 1) {
     const user = actorOf(draft.state, userSide);
     let target = actorOf(draft.state, targetSide);
@@ -1380,6 +1707,7 @@ function strike(draft: Draft, userSide: BattleSide, entry: BattleSkill): number 
     }
 
     let raw = scaled(user, entry.scaling, entry.power, entry.ratio) * damageMultiplier(user);
+    if (splitting) raw = (raw * SPLIT_DAMAGE_PCT) / 100;
     let guaranteedCrit = false;
     if (entry.bonus && conditionMet(target, entry.bonus.when)) {
       raw *= entry.bonus.multiplier;
@@ -1414,8 +1742,42 @@ function strike(draft: Draft, userSide: BattleSide, entry: BattleSkill): number 
       crit,
       fx: entry.fx,
     });
+    reflectDamage(draft, taken.actor, userSide, entry.kind, amount - taken.absorbed);
   }
   return dealt;
+}
+
+/**
+ * Resposta pronta (magia) e Cacos no chão (físico): parte do dano volta para quem bateu.
+ * Nunca derruba: o herói fica com pelo menos 1 de vida.
+ */
+function reflectDamage(
+  draft: Draft,
+  target: BattleActor,
+  userSide: BattleSide,
+  kind: SkillKind,
+  dealt: number,
+): void {
+  if (dealt <= 0 || target.hp <= 0) return;
+  const pct =
+    target.trait === 'REFLECT' && kind === 'MAGIC'
+      ? REFLECT_PCT
+      : target.trait === 'THORNS' && kind === 'PHYSICAL'
+        ? THORNS_PCT
+        : 0;
+  if (pct === 0) return;
+  const user = actorOf(draft.state, userSide);
+  const amount = Math.min(user.hp - 1, Math.max(1, Math.floor((dealt * pct) / 100)));
+  if (amount <= 0) return;
+  draft.state = withActor(draft.state, { ...user, hp: user.hp - amount });
+  draft.lines.push(`${target.name} devolve ${amount} de dano.`);
+  emit(draft, {
+    kind: 'DAMAGE',
+    target: userSide,
+    source: target.side,
+    amount,
+    fx: kind === 'MAGIC' ? 'ARCANE' : 'SLASH',
+  });
 }
 
 function heal(draft: Draft, side: BattleSide, amount: number): void {
@@ -1568,17 +1930,54 @@ function applyEnemyTrait(draft: Draft, previous: readonly BattleEvent[], enemyTu
     }
     case 'TWO_PHASES': {
       if (enemy.traitUsed || !half) return;
+      const boss = BOSSES[enemy.bossId ?? 'procrastination'];
       draft.state = withActor(draft.state, {
         ...enemy,
         traitUsed: true,
-        skills: BOSS_PHASE2_SKILLS,
+        skills: boss.phase2Skills,
         cooldowns: {},
         damageBonus: enemy.damageBonus + BOSS_PHASE2_DAMAGE_BONUS,
-        assetKey: `${BOSS_ASSET}+phase2`,
+        assetKey: `${boss.assetKey}+phase2`,
       });
-      draft.lines.push(`O despertador disparou! ${enemy.name} entra na fase 2.`);
+      draft.lines.push(boss.phaseLine);
       traitEvent(draft, trait, 'BUFF');
       heal(draft, 'ENEMY', Math.round((enemy.maxHp * BOSS_PHASE2_HEAL_PCT) / 100));
+      return;
+    }
+    case 'SPLIT': {
+      if (enemy.traitUsed || !half) return;
+      draft.state = withActor(draft.state, { ...enemy, traitUsed: true, split: true });
+      draft.lines.push(`${enemy.name} virou duas tarefas: cada golpe sai em dois.`);
+      traitEvent(draft, trait, 'BUFF');
+      return;
+    }
+    case 'LATE_RAGE': {
+      if (enemy.traitUsed || enemyTurns < LATE_RAGE_TURN) return;
+      draft.state = withActor(draft.state, {
+        ...enemy,
+        traitUsed: true,
+        damageBonus: enemy.damageBonus + LATE_RAGE_BONUS,
+      });
+      draft.lines.push(`O cansaço acumulou: ${enemy.name} causa +${LATE_RAGE_BONUS}% de dano.`);
+      traitEvent(draft, trait, 'BUFF');
+      return;
+    }
+    case 'DISTRACT': {
+      const hero = draft.state.hero;
+      const lost = Math.min(hero.energy, DISTRACT_ENERGY);
+      if (lost <= 0) return;
+      draft.state = { ...draft.state, hero: { ...hero, energy: hero.energy - lost } };
+      draft.lines.push(
+        `${enemy.name} distrai você: −${lost} de ${hero.energyLabel.toLowerCase()}.`,
+      );
+      traitEvent(draft, trait, 'DEBUFF');
+      emit(draft, {
+        kind: 'ENERGY',
+        target: 'PLAYER',
+        source: 'ENEMY',
+        amount: -lost,
+        fx: 'DEBUFF',
+      });
       return;
     }
     case 'VANISH': {
@@ -1681,10 +2080,10 @@ export function startBattle(input: StartBattleInput): BattleState {
   stats.maxEnergy += bonus.maxEnergy;
   stats.critChance = Math.min(60, stats.critChance + bonus.critChance);
   const variant: EnemyVariant = input.variant ?? 'NORMAL';
-  const villain =
-    variant === 'BOSS'
-      ? { name: BOSS_NAME, defeatedTitle: `${BOSS_NAME} derrotada!` }
-      : VILLAIN_BY_CATEGORY[input.category];
+  const boss = variant === 'BOSS' ? BOSSES[input.bossId ?? 'procrastination'] : null;
+  const villain = boss
+    ? { name: boss.name, defeatedTitle: `${boss.name} derrotada!` }
+    : VILLAIN_BY_CATEGORY[input.category];
   const trimmed = input.heroName.trim();
   const heroName = trimmed.length > 0 ? trimmed : 'Herói';
   const startHp =
@@ -1713,10 +2112,15 @@ export function startBattle(input: StartBattleInput): BattleState {
     variant === 'BOSS'
       ? `Chefe da semana · Nv ${scaleLevel}`
       : `${variant === 'ELITE' ? 'Elite · ' : ''}${DIFFICULTY_LABELS[input.difficulty]} · Nv ${level}`;
-  const enemyAsset =
-    variant === 'BOSS'
-      ? BOSS_ASSET
-      : `${ENEMY_ASSET[input.category]}${variant === 'ELITE' ? '+elite' : ''}`;
+  const enemyAsset = boss
+    ? boss.assetKey
+    : `${ENEMY_ASSET[input.category]}${variant === 'ELITE' ? '+elite' : ''}`;
+  const pairTraits = [ENEMY_TRAITS[input.category].id, ENEMY_TRAITS_ALT[input.category].id];
+  const enemyTrait: EnemyTraitId = boss
+    ? 'TWO_PHASES'
+    : input.trait && pairTraits.includes(input.trait)
+      ? input.trait
+      : ENEMY_TRAITS[input.category].id;
   const potions: PotionStock = { 'potion.water': 0, 'potion.coffee': 0 };
   for (const id of Object.keys(potions) as PotionId[]) {
     potions[id] = Math.max(0, Math.floor(input.potions?.[id] ?? 0));
@@ -1746,6 +2150,9 @@ export function startBattle(input: StartBattleInput): BattleState {
         ? input.skills
         : HERO_SKILLS[character.characterClass],
     assetKey: `${HERO_ASSET[character.characterClass]}${input.heroLook ? `+${input.heroLook}` : ''}`,
+    assetLayers: input.heroLayers
+      ? { under: [...input.heroLayers.under], over: [...input.heroLayers.over] }
+      : undefined,
   };
   const enemy: BattleActor = {
     id: 'enemy',
@@ -1766,9 +2173,10 @@ export function startBattle(input: StartBattleInput): BattleState {
     shieldBonus: 0,
     statuses: [],
     cooldowns: {},
-    skills: variant === 'BOSS' ? BOSS_SKILLS : ENEMY_SKILLS[input.category],
+    skills: boss ? boss.skills : ENEMY_SKILLS[input.category],
     assetKey: enemyAsset,
-    trait: variant === 'BOSS' ? BOSS_TRAIT.id : ENEMY_TRAITS[input.category].id,
+    trait: enemyTrait,
+    bossId: boss?.id,
   };
 
   const opening: BattleState = {
@@ -1961,4 +2369,51 @@ export function applyEnemyMove(state: BattleState): BattleState {
 
 export function enemyIntent(state: BattleState): BattleSkill | null {
   return state.enemy.skills.find((entry) => entry.id === state.enemyIntentId) ?? null;
+}
+
+/**
+ * Escolha automática do herói (luta rápida): com pouca vida, cura ou escudo; no resto,
+ * o golpe pronto de mais dano. Null quando nada está pronto.
+ */
+export function autoSkill(state: BattleState): BattleSkill | null {
+  const { hero, enemy } = state;
+  const ready = hero.skills.filter((entry) => skillBlock(hero, entry) == null);
+  if (ready.length === 0) return null;
+  if (hero.hp / hero.maxHp < 0.35) {
+    const sustain = ready.find((entry) => entry.heal || entry.shield);
+    if (sustain) return sustain;
+  }
+  let best = ready[ready.length - 1];
+  let bestScore = -1;
+  for (const entry of ready) {
+    const score = previewDamage(hero, enemy, entry) + (entry.applies?.length ?? 0) * 2;
+    if (score > bestScore) {
+      best = entry;
+      bestScore = score;
+    }
+  }
+  return best;
+}
+
+/**
+ * Luta rápida: joga até o fim com `autoSkill`, sem poções. A mesma semente dá o mesmo
+ * resultado. Devolve o estado final (VICTORY ou DEFEAT; o mesmo estado se travar).
+ */
+export function autoBattle(state: BattleState, maxSteps = 240): BattleState {
+  let current = state;
+  for (let step = 0; step < maxSteps; step += 1) {
+    let next = current;
+    if (current.phase === 'PLAYER_TURN') {
+      const entry = autoSkill(current);
+      if (!entry) break;
+      next = applyPlayerMove(current, entry.id);
+    } else if (current.phase === 'ENEMY_TURN') {
+      next = applyEnemyMove(current);
+    } else {
+      break;
+    }
+    if (next === current) break;
+    current = next;
+  }
+  return current;
 }

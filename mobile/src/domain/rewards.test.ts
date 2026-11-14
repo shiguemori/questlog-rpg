@@ -4,7 +4,9 @@ import { completeQuest } from './completeQuest';
 import { CLASS_DEFAULTS } from './constants';
 import { localIsoDate } from './dates';
 import { attributeBonusXp, canArmStreakShield, resolveStreak, streakBonusXp } from './rewards';
+import { emptyBestiary } from './bestiary';
 import { emptyWeeklyBoss } from './boss';
+import { emptyDailyChallenges } from './challenges';
 import { emptyInventory } from './loot';
 import { defaultPlayerSettings } from './state';
 import type { AppState, Character } from './types';
@@ -72,6 +74,9 @@ describe('bônus de atributo e streak', () => {
       settings: defaultPlayerSettings(),
       inventory: emptyInventory(),
       weeklyBoss: emptyWeeklyBoss(),
+      dailyChallenges: emptyDailyChallenges(),
+      weeks: [],
+      bestiary: emptyBestiary(),
     } satisfies AppState;
     const blocked = completeQuest(base, 'q1', new Date('2026-11-11T10:04:40.000Z'));
     assert.ok(blocked);

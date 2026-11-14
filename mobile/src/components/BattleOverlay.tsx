@@ -4,6 +4,7 @@ import {
   Image,
   type ImageSourcePropType,
   Modal,
+  Pressable,
   StyleSheet,
   Text,
   useWindowDimensions,
@@ -22,11 +23,11 @@ import {
   useSafeAreaInsets,
   type EdgeInsets,
 } from 'react-native-safe-area-context';
-import { BOSS_TRAIT, turnLimitFor, type BattleSkill, type BattleState } from '../domain/battle';
+import { BOSSES, turnLimitFor, type BattleSkill, type BattleState } from '../domain/battle';
 import type { PotionId } from '../domain/loot';
 import type { MusicVolume } from '../domain/types';
 import { useBattleMusic } from '../platform/battleMusic';
-import { useBattleCues } from '../platform/battleCues';
+import { playChestCue, useBattleCues } from '../platform/battleCues';
 import { useReducedMotion } from '../platform/feedback';
 import { battle as tone, colors } from '../theme/colors';
 import { space } from '../theme/spacing';
@@ -58,6 +59,8 @@ export interface BattleRewardView {
   loot?: LootView | null;
   /** Troca a frase do XP (ex.: derrota contra o chefe). */
   summary?: string;
+  /** Desafios do dia que fecharam nesta luta ("Desafio do dia: … · +1 Café Forte"). */
+  challengeLines?: string[];
 }
 
 export interface BattleOverlayProps {
@@ -75,6 +78,8 @@ export interface BattleOverlayProps {
   onTutorialDone?: () => void;
   /** Trilha da arena (Ajustes → Música). 0 = desligada. */
   musicVolume?: MusicVolume;
+  /** Luta fácil: resolve na hora, sem animação (o herói escolhe os golpes). */
+  onAutoResolve?: () => void;
 }
 
 /**
@@ -88,6 +93,9 @@ const ARENA: Record<string, ImageSourcePropType> = {
   'enemy.home': require('../../assets/battle/arena-home.jpg'),
   'enemy.other': require('../../assets/battle/arena-other.jpg'),
   'enemy.boss': require('../../assets/battle/arena-boss.jpg'),
+  'enemy.clutter': require('../../assets/battle/arena-clutter.jpg'),
+  'enemy.couch': require('../../assets/battle/arena-couch.jpg'),
+  'enemy.meeting': require('../../assets/battle/arena-meeting.jpg'),
 };
 
 /** `enemy.study+elite` usa a arena do `enemy.study`. */
@@ -135,6 +143,7 @@ function BattleScreen({
   battle,
   reward,
   onMove,
+  onAutoResolve,
   onItem,
   onDismiss,
   onUndo,
@@ -174,6 +183,13 @@ function BattleScreen({
   const showResult = finished && revealed;
 
   useBattleCues(battle.events, soundEnabled, reduceMotion);
+  const hasLoot = showResult && won && reward?.loot != null;
+  useEffect(() => {
+    if (!hasLoot) return undefined;
+    // O baú abre 860 ms depois do resultado aparecer (ver LootReveal).
+    const timer = setTimeout(() => playChestCue(soundEnabled), reduceMotion ? 0 : 860);
+    return () => clearTimeout(timer);
+  }, [hasLoot, reduceMotion, soundEnabled]);
   const arenaKey = arenaKeyOf(battle.enemy.assetKey);
   useBattleMusic(arenaKey, musicVolume, finished);
 
@@ -259,17 +275,22 @@ function BattleScreen({
   };
   const arena = ARENA[arenaKey];
   // O chefe muda de fase: a faixa anuncia, como na abertura.
-  const phaseShift = battle.events.find(
-    (event) => event.kind === 'TRAIT' && event.skillName === BOSS_TRAIT.name,
-  );
+  const bossDef = boss ? BOSSES[battle.enemy.bossId ?? 'procrastination'] : null;
+  const phaseShift = bossDef
+    ? battle.events.find(
+        (event) => event.kind === 'TRAIT' && event.skillName === bossDef.trait.name,
+      )
+    : undefined;
   const lines = battle.log.filter((entry) => entry.text !== battle.victoryTitle).slice(-2);
   const turnLimit = turnLimitFor(battle);
   const turnShown = Math.min(turnLimit, battle.turn + (finished ? 0 : 1));
   const intro = battle.turn === 0 && battle.events.length === 0 && !finished;
 
-  const resultLines = [reward?.vitalsLine, reward?.habitLine].filter(
-    (line): line is string => typeof line === 'string' && line.length > 0,
-  );
+  const resultLines = [
+    reward?.vitalsLine,
+    reward?.habitLine,
+    ...(reward?.challengeLines ?? []),
+  ].filter((line): line is string => typeof line === 'string' && line.length > 0);
 
   return (
     <View style={styles.screen} accessibilityViewIsModal testID="battle-overlay">
@@ -343,7 +364,7 @@ function BattleScreen({
         {phaseShift ? (
           <BattleBanner
             key={phaseShift.seq}
-            text="Fase 2: o despertador disparou!"
+            text={bossDef?.phaseBanner ?? 'Fase 2!'}
             reduceMotion={reduceMotion}
           />
         ) : null}
@@ -399,6 +420,19 @@ function BattleScreen({
                 }}
                 onInspect={setInspected}
               />
+              {onAutoResolve && battle.turn === 0 && !waiting ? (
+                <Pressable
+                  onPress={onAutoResolve}
+                  style={({ pressed }) => [styles.autoBtn, pressed && styles.autoBtnPressed]}
+                  accessibilityRole="button"
+                  accessibilityLabel="Resolver a luta agora"
+                  accessibilityHint="Luta fácil: o herói escolhe os golpes e o resultado aparece na hora."
+                  hitSlop={8}
+                  testID="battle-auto-resolve"
+                >
+                  <Text style={styles.autoText}>Resolver agora</Text>
+                </Pressable>
+              ) : null}
             </View>
           </>
         )}
@@ -456,4 +490,17 @@ const styles = StyleSheet.create({
   logNow: { fontSize: 15, lineHeight: 21, fontWeight: '800', color: colors.text },
   // Empurra as habilidades para o rodapé, perto do polegar.
   controls: { marginTop: 'auto' },
+  autoBtn: {
+    alignSelf: 'center',
+    marginTop: space.sm,
+    paddingVertical: space.xs,
+    paddingHorizontal: space.md,
+  },
+  autoBtnPressed: { opacity: 0.6 },
+  autoText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.textMuted,
+    textDecorationLine: 'underline',
+  },
 });

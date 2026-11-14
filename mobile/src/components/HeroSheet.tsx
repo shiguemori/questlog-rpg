@@ -39,23 +39,26 @@ import type {
   MusicVolume,
   PlayerSettings,
 } from '../domain/types';
-import { heroArtKey } from '../domain/loot';
+import { heroArtKey, heroLayers } from '../domain/loot';
 import { useReducedMotion } from '../platform/feedback';
 import { colors } from '../theme/colors';
 import { radius, space } from '../theme/spacing';
 import { CharacterArt } from './CharacterArt';
 import { Backpack } from './hero/Backpack';
+import { Bestiary } from './hero/Bestiary';
 import { SkillLoadout } from './hero/SkillLoadout';
 import { TalentTree } from './hero/TalentTree';
 import { XpBar } from './XpBar';
 
-type HeroTab = 'ATTRIBUTES' | 'TALENTS' | 'SKILLS' | 'BACKPACK' | 'JOURNEY' | 'SETTINGS';
+type HeroTab =
+  'ATTRIBUTES' | 'TALENTS' | 'SKILLS' | 'BACKPACK' | 'BESTIARY' | 'JOURNEY' | 'SETTINGS';
 
 const TABS: readonly { id: HeroTab; label: string }[] = [
   { id: 'ATTRIBUTES', label: 'Atributos' },
   { id: 'TALENTS', label: 'Talentos' },
   { id: 'SKILLS', label: 'Golpes' },
   { id: 'BACKPACK', label: 'Mochila' },
+  { id: 'BESTIARY', label: 'Bestiário' },
   { id: 'JOURNEY', label: 'Jornada' },
   { id: 'SETTINGS', label: 'Ajustes' },
 ];
@@ -192,6 +195,7 @@ export function HeroSheet({
             <View style={styles.portrait}>
               <CharacterArt
                 assetKey={heroArtKey(character.characterClass, state.inventory)}
+                layers={heroLayers(character.characterClass, state.inventory)}
                 size={84}
                 accessibilityLabel={`${classLabel} ${character.name}`}
               />
@@ -294,6 +298,12 @@ export function HeroSheet({
           {tab === 'BACKPACK' ? (
             <View style={styles.panel}>
               <Backpack state={state} onHeroChange={onHeroChange} />
+            </View>
+          ) : null}
+
+          {tab === 'BESTIARY' ? (
+            <View style={styles.panel}>
+              <Bestiary state={state} />
             </View>
           ) : null}
 
@@ -529,7 +539,7 @@ const styles = StyleSheet.create({
   name: { fontSize: 24, fontWeight: '800', color: colors.text },
   rank: { marginTop: 2, fontSize: 14, fontWeight: '600', color: colors.amberSoft },
 
-  // Grade 3×2: as 6 abas visíveis de uma vez (sem rolar e sem esconder "Ajustes").
+  // Grade 4 + 3: as 7 abas visíveis de uma vez (sem rolar e sem esconder "Ajustes").
   tabs: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -540,7 +550,8 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bgElevated,
   },
   tab: {
-    flexBasis: '33.333%',
+    flexBasis: '25%',
+    flexGrow: 1,
     alignItems: 'center',
     justifyContent: 'center',
     minHeight: 40,

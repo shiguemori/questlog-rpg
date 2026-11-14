@@ -1,8 +1,13 @@
+import type { Bestiary } from './bestiary';
+import type { DailyChallenges } from './challenges';
 import type { Inventory } from './loot';
+import type { WeekRecord } from './weekly';
 
 export type Difficulty = 'EASY' | 'MEDIUM' | 'HARD';
 export type Category = 'STUDY' | 'WORK' | 'HEALTH' | 'HOME' | 'OTHER';
 export type CharacterClass = 'WARRIOR' | 'MAGE' | 'ROGUE';
+/** Quando a missão volta: todo dia, de segunda a sexta ou uma vez por semana. */
+export type RepeatRule = 'DAILY' | 'WEEKDAYS' | 'WEEKLY';
 
 export interface Quest {
   id: string;
@@ -15,8 +20,14 @@ export interface Quest {
   createdAt: string;
   /** ISO 8601 do momento da conclusão. Ausente em saves antigos. */
   completedAt?: string;
-  /** Hábito fixo: reabre no dia seguinte. O anti-farm vale de novo. */
+  /** Tem repetição (`repeat`). Mantido para saves e telas antigas. */
   recurring: boolean;
+  /** Quando reabre (ver `schedule.ts`). Ausente = não repete. */
+  repeat?: RepeatRule;
+  /** Vezes seguidas que a missão foi feita na vez certa. */
+  streak?: number;
+  /** Dia (YYYY-MM-DD) da última conclusão desta missão. */
+  lastDoneOn?: string;
 }
 
 export interface Attributes {
@@ -96,6 +107,8 @@ export interface PlayerSettings {
   battleTutorialDone: boolean;
   /** Volume da trilha da batalha (0 = desligada). Independe do Som dos efeitos. */
   musicVolume: MusicVolume;
+  /** Semana (segunda-feira) cujo resumo já foi visto. */
+  dismissedRecapWeek: string | null;
 }
 
 export type MusicVolume = 0 | 0.3 | 0.6 | 1;
@@ -120,4 +133,10 @@ export interface AppState {
   /** Equipamento e poções (ver `loot.ts`). */
   inventory: Inventory;
   weeklyBoss: WeeklyBoss;
+  /** Três desafios do dia (ver `challenges.ts`). */
+  dailyChallenges: DailyChallenges;
+  /** Resumo das últimas semanas, da mais antiga para a mais nova (ver `weekly.ts`). */
+  weeks: WeekRecord[];
+  /** Monstros vencidos e jeitos de lutar já vistos (ver `bestiary.ts`). */
+  bestiary: Bestiary;
 }

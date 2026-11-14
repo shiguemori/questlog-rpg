@@ -8,7 +8,11 @@ import {
   streakMilestoneCrossed,
   type StreakMilestone,
 } from './engagement';
+import { progressChallenges, type Challenge } from './challenges';
+import type { LootDrop } from './loot';
 import { attributeBonusXp, resolveStreak, streakBonusXp } from './rewards';
+import { nextQuestStreak } from './schedule';
+import { noteWeek } from './weekly';
 import type { AppState, Character, Quest, UserStats } from './types';
 import { applyXp } from './xp';
 
@@ -42,6 +46,9 @@ export interface CompleteQuestResult {
    * REDUCED: derrota — metade do XP base, sem bônus. O anti-farm continua valendo.
    */
   rewardTier: QuestRewardTier;
+  /** Desafios do dia que fecharam com esta conclusão (só conclusão com XP conta). */
+  challengesFinished: Challenge[];
+  challengeBonus: LootDrop | null;
 }
 
 /**
@@ -112,12 +119,44 @@ export function completeQuest(
   };
   const dailyGoalJustMet = !goalBefore.met && buildDailyGoal(stats, todayIsoDate, goalTarget).met;
 
-  const quests: Quest[] = state.quests.map((q) =>
-    q.id === questId ? { ...q, completed: true, completedAt: now.toISOString() } : q,
-  );
+  const questStreak = nextQuestStreak(quest, todayIsoDate);
+  const quests: Quest[] = state.quests.map((q) => {
+    if (q.id !== questId) return q;
+    const done: Quest = { ...q, completed: true, completedAt: now.toISOString() };
+    if (q.repeat) {
+      done.lastDoneOn = todayIsoDate;
+      done.streak = questStreak;
+    }
+    return done;
+  });
+
+  let next: AppState = {
+    ...state,
+    character,
+    quests,
+    stats,
+    settings: streakResolution.settings,
+  };
+  next = noteWeek(next, now, { quest: { category: quest.category, streak } });
+  let challengesFinished: Challenge[] = [];
+  let challengeBonus: LootDrop | null = null;
+  if (xpAwarded > 0) {
+    const progress = progressChallenges(next, { type: 'QUEST', category: quest.category }, now);
+    next = progress.state;
+    challengesFinished = progress.finished;
+    challengeBonus = progress.bonus;
+    if (progress.finished.length > 0) {
+      next = noteWeek(next, now, {
+        challenges: progress.finished.length,
+        items: progress.bonus ? 1 : 0,
+      });
+    }
+  }
 
   return {
-    state: { ...state, character, quests, stats, settings: streakResolution.settings },
+    state: next,
+    challengesFinished,
+    challengeBonus,
     leveledUp,
     newLevel,
     xpAwarded,

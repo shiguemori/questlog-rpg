@@ -31,6 +31,9 @@ Fonte de verdade no app: `mobile/src/domain/*`.
 - Pontos de atributo: 1 ponto = +1 no atributo escolhido (`progression.spendAttributePoint`).
 - Conquistas (`progression.ACHIEVEMENTS`) são derivadas de XP total, melhor streak e nível — quest sem XP não desbloqueia nada.
 - Barra de XP (`xpBar`): fração `xp / maxXp` entre 0 e 1; no level up enche até 100% e recomeça.
+- **Repetição** (`schedule.ts`): missão pode repetir todo dia, de segunda a sexta ou uma vez por semana (escolha ao criar ou no botão da linha, que passa pelas opções). Concluída, reabre na próxima vez dela, com o relógio do anti-farm zerado. Cada missão tem a própria sequência: concluir na vez certa soma 1; pular uma vez zera. Save antigo com `recurring: true` vira "todo dia".
+- **Desafios do dia** (`challenges.ts`): três por dia, sorteados pela data e guardados no save. Um de missão (de uma categoria com missão aberta, ou "conclua 2 missões") e dois de batalha (sem poção, média ou difícil, em até 5 turnos, terminar com mais da metade da vida). Cada um dá uma poção; os três juntos dão 5 fragmentos, uma vez. Só conclusão com XP conta: o anti-farm vale.
+- **Resumo da semana** (`weekly.ts`): por semana (segunda a domingo), missões por categoria, vitórias e derrotas, maior streak, itens, desafios e o chefe. Aparece no domingo (semana atual) e na segunda e terça (semana anterior), até tocar em Fechar (`settings.dismissedRecapWeek`). Guarda as últimas 8 semanas.
 
 ## Casos de uso (`mobile/src/domain`)
 
@@ -42,6 +45,12 @@ Fonte de verdade no app: `mobile/src/domain/*`.
 | `quests.ts` | Validar título, registrar, excluir, limpar, separar abertas/concluídas |
 | `progression.ts` | Título do herói, gasto de atributo, conquistas |
 | `state.ts` | Estado inicial, início da jornada, validação/migração do save |
+| `schedule.ts` | Repetição das missões e sequência de cada uma |
+| `challenges.ts` | Desafios do dia: sorteio, progresso e recompensa |
+| `weekly.ts` | Resumo da semana: anotar e decidir quando mostrar |
+| `bestiary.ts` | Bestiário: vitórias e jeitos vistos |
+| `battleRecords.ts` | Registro comum de toda luta (bestiário, desafios, semana) |
+| `boss.ts` / `loot.ts` | Chefe da semana em rodízio; loot, conjuntos e aprimoramento |
 | `antiFarm.ts` | Elegibilidade de XP, contador regressivo, resumo diário |
 | `xpBar.ts` / `dates.ts` / `victory.ts` | Barra de XP, dia local, vilão da cena de vitória |
 

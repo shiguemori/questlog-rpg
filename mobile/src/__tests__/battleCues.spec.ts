@@ -29,7 +29,8 @@ describe('som e vibração de cada golpe', () => {
     expect(cueFor(event({ kind: 'SHIELD', target: 'PLAYER' }), 0)?.cue).toBe('shield');
     expect(cueFor(event({ kind: 'MISS' }), 0)?.cue).toBe('whoosh');
     expect(cueFor(event({ kind: 'CAST', target: 'PLAYER', source: 'PLAYER' }), 0)).toBeNull();
-    expect(cueFor(event({ kind: 'KO' }), 0)).toBeNull();
+    expect(cueFor(event({ kind: 'KO' }), 0)?.cue).toBe('ko');
+    expect(cueFor(event({ kind: 'TRAIT' }), 0)?.cue).toBe('trait');
   });
 
   it('cada evento toca depois do anterior', () => {

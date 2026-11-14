@@ -10,9 +10,14 @@ import type {
   MusicVolume,
   PlayerSettings,
   Quest,
+  RepeatRule,
   UserStats,
 } from './types';
+import { emptyBestiary, sanitizeBestiary } from './bestiary';
 import { emptyWeeklyBoss, sanitizeWeeklyBoss } from './boss';
+import { emptyDailyChallenges, sanitizeDailyChallenges } from './challenges';
+import { REPEAT_RULES } from './schedule';
+import { sanitizeWeeks } from './weekly';
 import { emptyInventory, sanitizeInventory } from './loot';
 import { clampDailyGoalTarget } from './rewards';
 import { sanitizeVitals } from './vitals';
@@ -34,6 +39,7 @@ export function defaultPlayerSettings(): PlayerSettings {
     streakShieldUsedOn: null,
     battleTutorialDone: false,
     musicVolume: 0.6,
+    dismissedRecapWeek: null,
   };
 }
 
@@ -71,6 +77,9 @@ export function createInitialState(): AppState {
     settings: defaultPlayerSettings(),
     inventory: emptyInventory(),
     weeklyBoss: emptyWeeklyBoss(),
+    dailyChallenges: emptyDailyChallenges(),
+    weeks: [],
+    bestiary: emptyBestiary(),
   };
 }
 
@@ -162,6 +171,20 @@ function sanitizeQuest(raw: unknown): Quest | null {
   if (typeof raw.completedAt === 'string' && !Number.isNaN(Date.parse(raw.completedAt))) {
     quest.completedAt = raw.completedAt;
   }
+  // Save antigo: recurring true era todo dia.
+  const repeat = REPEAT_RULES.includes(raw.repeat as RepeatRule)
+    ? (raw.repeat as RepeatRule)
+    : quest.recurring
+      ? 'DAILY'
+      : undefined;
+  if (repeat) {
+    quest.repeat = repeat;
+    quest.recurring = true;
+    const streak = toCount(raw.streak, 0);
+    if (streak > 0) quest.streak = Math.min(9999, streak);
+    const lastDoneOn = toIsoDay(raw.lastDoneOn);
+    if (lastDoneOn) quest.lastDoneOn = lastDoneOn;
+  }
   return quest;
 }
 
@@ -210,6 +233,7 @@ function sanitizeSettings(raw: unknown): PlayerSettings {
     musicVolume: MUSIC_VOLUMES.includes(raw.musicVolume as MusicVolume)
       ? (raw.musicVolume as MusicVolume)
       : base.musicVolume,
+    dismissedRecapWeek: toIsoDay(raw.dismissedRecapWeek),
   };
 }
 
@@ -256,6 +280,9 @@ export function sanitizeState(raw: unknown): AppState | null {
     settings: sanitizeSettings(raw.settings),
     inventory: sanitizeInventory(raw.inventory),
     weeklyBoss: sanitizeWeeklyBoss(raw.weeklyBoss),
+    dailyChallenges: sanitizeDailyChallenges(raw.dailyChallenges),
+    weeks: sanitizeWeeks(raw.weeks),
+    bestiary: sanitizeBestiary(raw.bestiary),
   };
 }
 

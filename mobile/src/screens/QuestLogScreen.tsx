@@ -14,13 +14,15 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PressScale } from '../motion/PressScale';
 import { BossCard } from '../components/BossCard';
+import { DailyChallengesCard } from '../components/DailyChallengesCard';
 import { CharacterArt } from '../components/CharacterArt';
-import { heroArtKey } from '../domain/loot';
+import { heroArtKey, heroLayers } from '../domain/loot';
 import { HeroSheet } from '../components/HeroSheet';
 import { HeroVitalsBar } from '../components/HeroVitalsBar';
 import { QuestCreateModal } from '../components/QuestCreateModal';
 import { QuestRow } from '../components/QuestRow';
 import { WeekStrip } from '../components/WeekStrip';
+import { WeeklyRecap } from '../components/WeeklyRecap';
 import { XpBar } from '../components/XpBar';
 import { buildDailyXpSummary, msUntilXpEligible } from '../domain/antiFarm';
 import { CATEGORIES, CATEGORY_LABELS, CLASS_DEFAULTS } from '../domain/constants';
@@ -36,6 +38,7 @@ import {
 import { heroRankForLevel, nextRankHint } from '../domain/progression';
 import { presetXp, QUEST_PRESETS, type QuestPreset } from '../domain/questPresets';
 import { splitQuests, type CategoryFilter, type NewQuestInput } from '../domain/quests';
+import { recapWeekFor } from '../domain/weekly';
 import type {
   AppState,
   AttributeKey,
@@ -149,6 +152,7 @@ export function QuestLogScreen({
   const streakName = streakTitle(stats.streak);
   const repeatDraft = latestQuestDraft(state.quests);
   const points = character.attributePoints;
+  const recap = recapWeekFor(state, today);
 
   const { open, done } = useMemo(() => splitQuests(state.quests, filter), [state.quests, filter]);
 
@@ -203,6 +207,14 @@ export function QuestLogScreen({
           </Text>
         ) : null}
       </View>
+
+      {recap ? (
+        <WeeklyRecap
+          week={recap}
+          onDismiss={() => onPatchSettings({ dismissedRecapWeek: recap.weekKey })}
+        />
+      ) : null}
+      <DailyChallengesCard challenges={state.dailyChallenges} today={today} />
 
       <View style={styles.quickBlock}>
         <Text style={[styles.label, styles.padded]}>Atividades rápidas</Text>
@@ -382,6 +394,7 @@ export function QuestLogScreen({
             <View style={styles.heroShadow} />
             <CharacterArt
               assetKey={heroArtKey(character.characterClass, state.inventory)}
+              layers={heroLayers(character.characterClass, state.inventory)}
               size={96}
               accessibilityLabel={`${classLabel} ${character.name}`}
             />

@@ -11,13 +11,27 @@ import {
   applyEnemyMove,
   applyPlayerItem,
   applyPlayerMove,
+  autoBattle,
+  BOSSES,
+  rollEnemyTrait,
   rollEnemyVariant,
   startBattle,
   type BattleState,
 } from './src/domain/battle';
 import { applyBattleSpoils } from './src/domain/battleSpoils';
-import { bossStatus, settleBossBattle } from './src/domain/boss';
-import { gearBonus, heroArtKey, heroLook, mergeBonus, type PotionId } from './src/domain/loot';
+import { bossOfToday, bossStatus, settleBossBattle } from './src/domain/boss';
+import { challengeText, ensureDailyChallenges, type Challenge } from './src/domain/challenges';
+import {
+  gearBonus,
+  heroArtKey,
+  heroLayers,
+  heroLook,
+  lootLabel,
+  mergeBonus,
+  POTIONS,
+  type LootDrop,
+  type PotionId,
+} from './src/domain/loot';
 import { lootViewOf } from './src/components/battle/lootView';
 import {
   completeQuest,
@@ -34,9 +48,10 @@ import {
   deleteQuest,
   editQuest,
   reopenDueRecurring,
-  setQuestRecurring,
+  setQuestRepeat,
   type NewQuestInput,
 } from './src/domain/quests';
+import { nextRepeatRule } from './src/domain/schedule';
 import { canArmStreakShield } from './src/domain/rewards';
 import {
   createInitialState,
@@ -62,6 +77,8 @@ import {
 } from './src/domain/vitals';
 import { syncDailyReminder } from './src/platform/reminder';
 import { playVictorySound } from './src/platform/sound';
+import { warmBattleSounds } from './src/platform/battleCues';
+import { preloadActorArt } from './src/platform/preloadArt';
 import { buildVictoryEvent, type QuestVictoryEvent } from './src/domain/victory';
 import { EVENT_STEP_MS, WINDUP_MS } from './src/components/battle/timing';
 import { announce, playHaptic, useReducedMotion } from './src/platform/feedback';
@@ -125,6 +142,16 @@ function vitalsLine(character: AppState['character'], now: Date): string {
   const wait =
     hours > 0 ? `${hours}h${rest > 0 ? String(rest).padStart(2, '0') : ''}` : `${rest} min`;
   return `Vida ${hp}/${maxHp} · enche em ${wait}`;
+}
+
+/** Linhas do resultado para os desafios do dia que fecharam. */
+function challengeLines(finished: readonly Challenge[], bonus: LootDrop | null): string[] {
+  const lines = finished.map(
+    (challenge) =>
+      `Desafio feito: ${challengeText(challenge)} · +1 ${POTIONS[challenge.reward].name}`,
+  );
+  if (bonus) lines.push(`Os três desafios de hoje: +${lootLabel(bonus)}`);
+  return lines;
 }
 
 interface BattleSession {
@@ -277,6 +304,7 @@ export function QuestLogApp({ store = stateStore }: QuestLogAppProps) {
           seed: base.seed,
           now: endedAt,
           potionsUsed: battle.potionsUsed,
+          battle,
         });
         const bossReward: BattleRewardView = {
           vitalsLine: vitalsLine(outcome.state.character, endedAt),
@@ -285,6 +313,7 @@ export function QuestLogApp({ store = stateStore }: QuestLogAppProps) {
           habitLine: won ? 'Ele volta na semana que vem.' : 'Dá para tentar de novo amanhã.',
           summary: won ? undefined : 'Sem XP desta vez.',
           loot: lootViewOf(outcome.drop),
+          challengeLines: challengeLines(outcome.challengesFinished, outcome.challengeBonus),
         };
         const settled: BattleSession = {
           ...base,
@@ -320,6 +349,7 @@ export function QuestLogApp({ store = stateStore }: QuestLogAppProps) {
             seed: base.seed,
             difficulty: base.difficulty,
             now: endedAt,
+            category: base.snapshot.quests.find((item) => item.id === base.questId)?.category,
           })
         : null;
       const result =
@@ -348,6 +378,10 @@ export function QuestLogApp({ store = stateStore }: QuestLogAppProps) {
             })
           : null,
         loot: lootViewOf(spoils?.drop ?? null),
+        challengeLines: challengeLines(
+          [...(completed?.challengesFinished ?? []), ...(spoils?.challengesFinished ?? [])],
+          completed?.challengeBonus ?? spoils?.challengeBonus ?? null,
+        ),
       };
       const next: BattleSession = {
         ...base,
@@ -455,13 +489,60 @@ export function QuestLogApp({ store = stateStore }: QuestLogAppProps) {
     [scheduleEnemyTurn],
   );
 
+  /** Luta rápida (só fácil): o herói joga sozinho e o resultado aparece na hora. */
+  const handleAutoResolve = useCallback(() => {
+    const current = sessionRef.current;
+    if (!current || current.reward || settledRef.current) return;
+    if (current.kind !== 'QUEST' || current.difficulty !== 'EASY') return;
+    if (current.battle.phase !== 'PLAYER_TURN') return;
+    clearEnemyTimer();
+    const final = autoBattle(current.battle);
+    if (final.phase === 'VICTORY' || final.phase === 'DEFEAT') {
+      resolveBattle(current, final, final.phase);
+      return;
+    }
+    const pending: BattleSession = { ...current, battle: final };
+    sessionRef.current = pending;
+    setSession(pending);
+  }, [clearEnemyTimer, resolveBattle]);
+
+  // Poses do herói vestido, dos monstros e do chefe da semana: carregadas antes da luta.
+  const heroKey = state ? heroArtKey(state.character.characterClass, state.inventory) : null;
+  const layerKeys = state
+    ? (() => {
+        const layers = heroLayers(state.character.characterClass, state.inventory);
+        return [...layers.under, ...layers.over].join('|');
+      })()
+    : '';
+  useEffect(() => {
+    if (!heroKey) return;
+    const timer = setTimeout(() => {
+      preloadActorArt([
+        heroKey,
+        ...layerKeys.split('|').filter(Boolean),
+        'enemy.study',
+        'enemy.work',
+        'enemy.health',
+        'enemy.home',
+        'enemy.other',
+        BOSSES[bossOfToday(new Date())].assetKey,
+      ]);
+    }, 1500);
+    return () => clearTimeout(timer);
+  }, [heroKey, layerKeys]);
+  const soundOn = state?.settings.soundEnabled ?? false;
+  useEffect(() => {
+    if (soundOn) warmBattleSounds();
+  }, [soundOn]);
+
   /** Chefe da semana: só com as vitórias da semana e uma tentativa por dia. */
   const handleStartBoss = useCallback(() => {
     const current = stateRef.current;
     if (!current || sessionRef.current) return;
     const now = new Date();
-    if (bossStatus(current.weeklyBoss, now, current.character.level).availability !== 'READY')
-      return;
+    const status = bossStatus(current.weeklyBoss, now, current.character.level);
+    if (status.availability !== 'READY') return;
+    const boss = BOSSES[status.bossId];
     clearUndo();
     settledRef.current = false;
     const seed = now.getTime() >>> 0;
@@ -474,9 +555,11 @@ export function QuestLogApp({ store = stateStore }: QuestLogAppProps) {
       snapshot: current,
       battle: startBattle({
         character: current.character,
-        category: 'OTHER',
+        category: boss.home,
         difficulty: 'HARD',
         variant: 'BOSS',
+        bossId: boss.id,
+        heroLayers: heroLayers(current.character.characterClass, current.inventory),
         heroName: current.character.name,
         heroHp: battleStartHp(current.character, now),
         seed,
@@ -530,6 +613,8 @@ export function QuestLogApp({ store = stateStore }: QuestLogAppProps) {
             category: quest.category,
             difficulty: quest.difficulty,
             variant: rollEnemyVariant(seed, quest.difficulty, current.character.level),
+            trait: rollEnemyTrait(seed, quest.category, current.character.level),
+            heroLayers: heroLayers(current.character.characterClass, current.inventory),
             heroName: current.character.name,
             heroHp: battleStartHp(current.character, now),
             seed,
@@ -597,10 +682,13 @@ export function QuestLogApp({ store = stateStore }: QuestLogAppProps) {
       }
 
       const unlocked = newlyUnlockedAchievements(current, result.state);
+      const challengeLine = challengeLines(result.challengesFinished, result.challengeBonus)[0];
       if (unlocked.length > 0) {
         setFeedback(`Conquista desbloqueada: ${unlocked.map((item) => item.title).join(', ')}`);
       } else if (result.shieldConsumed) {
         setFeedback('Escudo usado. O streak continua. Isso não dá XP.');
+      } else if (challengeLine) {
+        setFeedback(challengeLine);
       } else if (!result.showVillainScene) {
         setFeedback(habitLine ?? discreet);
       }
@@ -609,7 +697,11 @@ export function QuestLogApp({ store = stateStore }: QuestLogAppProps) {
   );
 
   const handleCalendarDay = useCallback(() => {
-    setState((current) => (current ? reopenDueRecurring(current) : current));
+    setState((current) => {
+      if (!current) return current;
+      const now = new Date();
+      return ensureDailyChallenges(reopenDueRecurring(current, now), now);
+    });
   }, []);
 
   const reminder = state?.settings.reminder ?? null;
@@ -637,7 +729,7 @@ export function QuestLogApp({ store = stateStore }: QuestLogAppProps) {
       if (!current) return current;
       const quest = current.quests.find((item) => item.id === questId);
       if (!quest) return current;
-      return setQuestRecurring(current, questId, !quest.recurring);
+      return setQuestRepeat(current, questId, nextRepeatRule(quest.repeat));
     });
   }, []);
 
@@ -785,6 +877,11 @@ export function QuestLogApp({ store = stateStore }: QuestLogAppProps) {
           onItem={handlePlayerItem}
           onDismiss={dismissBattle}
           onUndo={undoState && session.kind === 'QUEST' ? handleUndo : undefined}
+          onAutoResolve={
+            session.kind === 'QUEST' && session.difficulty === 'EASY'
+              ? handleAutoResolve
+              : undefined
+          }
           soundEnabled={state?.settings.soundEnabled ?? false}
           musicVolume={state?.settings.musicVolume ?? 0}
           showTutorial={state ? !state.settings.battleTutorialDone : false}

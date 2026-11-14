@@ -11,6 +11,11 @@ import {
   HERO_SKILLS,
   applyPlayerMove,
   potionBlock,
+  BOSS_IDS,
+  ENEMY_TRAITS,
+  ENEMY_TRAITS_ALT,
+  type BossId,
+  type EnemyTraitId,
   type EnemyVariant,
   previewDamage,
   skillBlock,
@@ -121,6 +126,7 @@ function fight(
   level: number,
   seed: number,
   variant: EnemyVariant = 'NORMAL',
+  extra: { trait?: EnemyTraitId; bossId?: BossId } = {},
 ): Result {
   const character = buildHero(cls, level);
   let state = startBattle({
@@ -132,6 +138,8 @@ function fight(
     skills: battleSkillsFor(character),
     bonus: heroBonus(character),
     variant,
+    trait: extra.trait,
+    bossId: extra.bossId,
     // Quem chega no chefe costuma ter juntado algumas poções.
     potions: variant === 'NORMAL' ? {} : { 'potion.water': 2, 'potion.coffee': 1 },
   });
@@ -147,6 +155,54 @@ function fight(
     turns: state.turn,
     hpLeft: state.hero.hp / state.hero.maxHp,
   };
+}
+
+// `npx tsx scripts/simulate-battles.ts tracos`: cada cômodo com o primeiro e o segundo jeito.
+if (process.argv[2] === 'tracos') {
+  const lines: string[] = [];
+  for (const difficulty of DIFFICULTIES) {
+    for (const level of [3, 5, 8]) {
+      for (const category of CATEGORIES) {
+        const cells: string[] = [];
+        for (const trait of [ENEMY_TRAITS[category].id, ENEMY_TRAITS_ALT[category].id]) {
+          let wins = 0;
+          for (const cls of CLASSES) {
+            for (let run = 0; run < RUNS; run += 1) {
+              if (fight(cls, category, difficulty, level, 1000 + run * 7919, 'NORMAL', { trait }).won)
+                wins += 1;
+            }
+          }
+          cells.push(`${trait.padEnd(10)} ${((wins / (RUNS * CLASSES.length)) * 100).toFixed(0).padStart(3)}%`);
+        }
+        lines.push(`${difficulty.padEnd(6)} nv${level} ${category.padEnd(6)} | ${cells.join(' | ')}`);
+      }
+    }
+  }
+  console.log(lines.join(String.fromCharCode(10)));
+  process.exit(0);
+}
+
+// `npx tsx scripts/simulate-battles.ts chefes`: os quatro chefes do rodízio.
+if (process.argv[2] === 'chefes') {
+  const lines: string[] = [];
+  for (const bossId of BOSS_IDS) {
+    for (const level of [3, 5, 8]) {
+      const cells: string[] = [];
+      for (const cls of CLASSES) {
+        let wins = 0;
+        let turns = 0;
+        for (let run = 0; run < RUNS; run += 1) {
+          const result = fight(cls, 'OTHER', 'HARD', level, 1000 + run * 7919, 'BOSS', { bossId });
+          if (result.won) wins += 1;
+          turns += result.turns;
+        }
+        cells.push(`${cls.padEnd(7)} ${((wins / RUNS) * 100).toFixed(0).padStart(3)}% ${(turns / RUNS).toFixed(1)}t`);
+      }
+      lines.push(`${bossId.padEnd(15)} nv${level} | ${cells.join(' | ')}`);
+    }
+  }
+  console.log(lines.join(String.fromCharCode(10)));
+  process.exit(0);
 }
 
 // `npx tsx scripts/simulate-battles.ts especiais`: só elite e chefe.

@@ -2,6 +2,12 @@ import React, { memo } from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { msUntilXpEligible } from '../domain/antiFarm';
 import { CATEGORY_LABELS, DIFFICULTY_LABELS } from '../domain/constants';
+import {
+  liveQuestStreak,
+  nextRepeatRule,
+  questStreakLabel,
+  REPEAT_LABELS,
+} from '../domain/schedule';
 import type { Category, Quest } from '../domain/types';
 import { colors } from '../theme/colors';
 import { radius, space } from '../theme/spacing';
@@ -41,6 +47,8 @@ function QuestRowBase({
   const remainingMs = quest.completed || nowMs <= 0 ? 0 : msUntilXpEligible(quest, nowMs);
   const waitingForXp = !quest.completed && remainingMs > 0;
   const secondsLeft = Math.ceil(remainingMs / 1000);
+  const nextRule = nextRepeatRule(quest.repeat);
+  const streak = quest.repeat ? liveQuestStreak(quest, new Date()) : 0;
 
   const handleComplete = () => {
     if (!waitingForXp) {
@@ -87,6 +95,11 @@ function QuestRowBase({
             </Text>
             <Text style={styles.xpPill}>+{quest.xp} XP</Text>
           </View>
+          {quest.repeat && streak > 1 ? (
+            <Text style={styles.streak} testID={`quest-streak-${quest.id}`}>
+              {questStreakLabel(quest.repeat, streak)}
+            </Text>
+          ) : null}
           {waitingForXp ? (
             <Text style={styles.waiting} testID={`quest-wait-${quest.id}`}>
               XP libera em {secondsLeft}s
@@ -118,14 +131,18 @@ function QuestRowBase({
           <Pressable
             onPress={() => onToggleRecurring(quest.id)}
             accessibilityRole="button"
-            accessibilityLabel={
-              quest.recurring
-                ? `Tirar hábito diário de ${quest.title}`
-                : `Tornar ${quest.title} um hábito diário`
-            }
+            accessibilityLabel={`Repetição de ${quest.title}: ${
+              quest.repeat ? REPEAT_LABELS[quest.repeat] : 'não repete'
+            }`}
+            accessibilityHint={`Toque para mudar para ${
+              nextRule ? REPEAT_LABELS[nextRule].toLowerCase() : 'não repetir'
+            }.`}
             style={styles.linkBtn}
+            testID={`quest-repeat-${quest.id}`}
           >
-            <Text style={styles.linkText}>{quest.recurring ? 'Diária' : 'Fixar'}</Text>
+            <Text style={[styles.linkText, quest.repeat && styles.linkTextOn]}>
+              {quest.repeat ? REPEAT_LABELS[quest.repeat] : 'Repetir'}
+            </Text>
           </Pressable>
           <Pressable
             style={({ pressed }) => [
@@ -211,6 +228,14 @@ const styles = StyleSheet.create({
   },
   linkBtn: { minHeight: 44, justifyContent: 'center' },
   linkText: { fontSize: 13, fontWeight: '700', color: colors.amberSoft },
+  linkTextOn: { color: colors.text },
+  streak: {
+    marginTop: space.xs,
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.textMuted,
+    fontVariant: ['tabular-nums'],
+  },
   completeBtn: {
     marginLeft: 'auto',
     minHeight: 44,

@@ -14,6 +14,9 @@ const TRACKS: Record<string, number> = {
   'enemy.home': require('../../assets/music/home.mp3'),
   'enemy.other': require('../../assets/music/other.mp3'),
   'enemy.boss': require('../../assets/music/boss.mp3'),
+  'enemy.clutter': require('../../assets/music/boss-clutter.mp3'),
+  'enemy.couch': require('../../assets/music/boss-couch.mp3'),
+  'enemy.meeting': require('../../assets/music/boss-meeting.mp3'),
 };
 
 /** Teto da trilha: fica abaixo dos efeitos de golpe. */

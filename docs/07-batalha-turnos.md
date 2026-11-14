@@ -110,26 +110,51 @@ A vida (30 / 46 / 50) e os atributos vêm da dificuldade e sobem com o nível do
 
 O jeito age no começo do turno do monstro (`applyEnemyTrait`), vira um evento `TRAIT` (texto "JEITO DO MONSTRO" em cima dele) e aparece na placa do monstro. Muda a melhor jogada de cada luta: contra o Caos, termine rápido; contra a Preguiça, não fique só defendendo.
 
+### Segundo jeito (`ENEMY_TRAITS_ALT`)
+
+A partir do **nível 3**, metade das lutas de cada cômodo vem com o segundo jeito no lugar do primeiro (`rollEnemyTrait`, pela semente). O bestiário mostra os dois e marca os já vistos.
+
+| Categoria | Segundo jeito | O que faz |
+|-----------|---------------|-----------|
+| Estudo | **Resposta pronta** | Devolve 25% do dano mágico que recebe. Golpe físico não volta |
+| Trabalho | **Vira duas tarefas** | Com metade da vida, cada golpe dele sai em dois, de 60% do dano |
+| Saúde | **Cansaço acumula** | Depois do 5º turno dele, +40% de dano até o fim |
+| Casa | **Cacos no chão** | Devolve 20% do dano físico que recebe. Magia não volta |
+| Outro | **Puxa a atenção** | Cada vez que age, tira 2 de energia do herói |
+
+O dano devolvido nunca derruba o herói (fica com 1 de vida). No simulador (`npx tsx scripts/simulate-battles.ts tracos`) o segundo jeito vence tanto quanto o primeiro: 95–100% no difícil a partir do nível 3.
+
 ### Elite
 
 Em luta média ou difícil, a partir do nível 2, o monstro tem 12% de chance de vir de **elite** (`rollEnemyVariant`, pela semente): vida ×1,25, +1 em força, inteligência e vitalidade, arte própria (roxo e rosa com coroa dourada, `enemy.*+elite`) e "Elite ·" na placa. Elite sempre deixa item.
 
 ### Chefe da semana (`boss.ts`)
 
-**Procrastinação**, um despertador gigante derretendo em cima de uma pilha de lembretes adiados.
+Quatro chefes em rodízio, um por semana (`bossOfWeek`, contando semanas desde 05/01/2026). Todos seguem o mesmo molde (`bossKit`): golpe físico, um status, uma trava e uma defesa na fase 1; dois golpes seguidos, um status forte e um golpe pesado na fase 2.
 
-- Aparece a partir do **nível 3**, depois de **5 vitórias** na semana (segunda a domingo). O cartão na tela principal mostra o progresso e, quando liberado, o botão Enfrentar.
+| Chefe | Cômodo | Fase 1 | Fase 2 | Arena |
+|-------|--------|--------|--------|-------|
+| **Procrastinação** (despertador derretendo) | Outro | Soneca do Despertador, Depois Eu Faço (cansado), Só Mais um Vídeo (trava), Desculpa Perfeita (escudo) | Alarme Estridente, Prazo Estourado (estresse), Pânico da Última Hora | quarto com relógios e luz vermelha |
+| **Montanha de Tralha** (cesto de roupa com caixas) | Casa | Pilha de Roupa, Nuvem de Poeira (incômodo), Peça no Chão (trava), Muralha de Caixas (escudo) | Avalanche de Caixas, Cheiro de Mofo (cansado), Tudo Desaba | cozinha à noite com caixas e roupa no chão |
+| **Sedentarismo** (sofá com controle remoto) | Saúde | Almofadada, Afundar no Sofá (cansado), Só Mais um Episódio (trava), Lanchinho (se cura 3 turnos) | Zapear, Farelo no Sofá (incômodo), Abraço do Sofá | academia com TV ligada e salgadinho |
+| **Reunião Infinita** (notebook com janelas de chamada) | Trabalho | Pauta Extra, Vamos Alinhar (cansado), Pode Repetir? (trava), Ata de 40 Páginas (escudo) | Responder a Todos, Mais 30 Minutos (estresse), Oitenta Slides | escritório com quadro de post-its |
+
+- Aparece a partir do **nível 3**, depois de **5 vitórias** na semana (segunda a domingo). O cartão na tela principal mostra qual chefe é, o progresso e, quando liberado, o botão Enfrentar.
 - Uma tentativa por dia. Vencido, some até a segunda seguinte.
 - Vida de difícil ×2,1, ataque de monstro médio um nível abaixo: a luta é longa, não injusta. Limite de 18 turnos (`BOSS_MAX_TURNS`).
-- **Fase 1:** Soneca do Despertador, Depois Eu Faço (cansado), Só Mais um Vídeo (trava), Desculpa Perfeita (escudo).
-- **Fase 2** (`TWO_PHASES`, na metade da vida): recupera 10% da vida, +15% de dano, troca para Alarme Estridente (2 golpes), Prazo Estourado (estresse), Pânico da Última Hora (pesado). A arte muda para a versão em brasa e uma faixa anuncia a fase.
-- Vitória: `120 + 15 × (nível − 1)` de XP e sempre um equipamento raro ou épico. Arena própria (quarto do estudo com luz vermelha e relógios na parede) e trilha própria.
+- **Fase 2** (`TWO_PHASES`, na metade da vida): recupera 10% da vida, +15% de dano, troca os golpes e a arte (versão em brasa, `enemy.clutter+phase2`). Uma faixa própria de cada chefe anuncia a fase ("Fase 2: o armário abriu!").
+- Vitória: `120 + 15 × (nível − 1)` de XP e sempre um equipamento raro ou épico. Cada chefe tem arena e trilha próprias.
+- Simulador (`npx tsx scripts/simulate-battles.ts chefes`): 59–100% de vitória a partir do nível 3 para as três classes, nos quatro chefes.
+
+### Luta rápida
+
+Em luta **fácil** de quest aparece "Resolver agora" embaixo dos golpes, antes da primeira jogada. O herói joga sozinho (`autoBattle`: com pouca vida cura ou se protege; no resto, o golpe pronto de mais dano), sem gastar poção, e o resultado aparece na hora. A mesma semente dá o mesmo resultado.
 
 IA (não aparece na tela): com ≤45% de vida prefere cura/escudo; em turnos alternados aplica um status que o herói ainda não tem; no resto usa o golpe mais forte disponível. O cartão de cada quest mostra o monstro da categoria.
 
 ## Loot, mochila e poções (`loot.ts`)
 
-Depois da vitória, o monstro pode deixar um item. O sorteio usa a semente da luta (mesma luta, mesmo item). Não existe loja: item só vem de luta.
+Depois da vitória, o monstro pode deixar um item. O sorteio usa a semente da luta (mesma luta, mesmo item). Não existe loja: item só vem de luta e dos desafios do dia.
 
 | Fonte | Chance de cair algo | Equipamento × poção | Raridade do equipamento |
 |-------|---------------------|---------------------|-------------------------|
@@ -137,26 +162,38 @@ Depois da vitória, o monstro pode deixar um item. O sorteio usa a semente da lu
 | Elite | 100% | 70% equipamento | comum 30, raro 55, épico 15 |
 | Chefe | 100% | só equipamento | raro 40, épico 60 |
 
-Equipamento repetido não cai: vira outra peça ou, com a coleção completa, poção.
+Sorteada a raridade, em 75% das vezes vem uma peça nova dela (se ainda houver); no resto, uma peça qualquer da raridade. **Peça repetida vira fragmentos**: 2 (comum), 4 (raro) ou 6 (épico).
 
-| Espaço | Item | Raridade | Bônus |
-|--------|------|----------|-------|
-| Chapéu | Boné da Sorte | Comum | +3% crítico |
-| Chapéu | Gorro de Lã | Comum | +6 vida |
-| Chapéu | Capacete de Obra | Raro | +15% escudo, +4 vida |
-| Chapéu | Chapéu Pontudo | Raro | +3 energia, +4% dano |
-| Chapéu | Coroa da Rotina | Épico | +8% dano, +4% crítico |
-| Amuleto | Trevo de Quatro Folhas | Comum | +4% crítico |
-| Amuleto | Coração de Pelúcia | Comum | +8 vida |
-| Amuleto | Ampulheta | Raro | +4 energia |
-| Amuleto | Estrela Dourada | Épico | +10% dano |
+| Espaço | Item | Raridade | Bônus | Conjunto |
+|--------|------|----------|-------|----------|
+| Chapéu | Boné da Sorte | Comum | +3% crítico | Sorte Grande |
+| Chapéu | Gorro de Lã | Comum | +6 vida | Aconchego |
+| Chapéu | Capacete de Obra | Raro | +15% escudo, +4 vida | Mão na Massa |
+| Chapéu | Chapéu Pontudo | Raro | +3 energia, +4% dano | Arcano |
+| Chapéu | Coroa da Rotina | Épico | +8% dano, +4% crítico | Realeza |
+| Arma | Arma em Brasa | Comum | +5% dano | Mão na Massa |
+| Arma | Arma de Gelo | Raro | +5% dano, +3% crítico | Arcano |
+| Arma | Arma Dourada | Épico | +9% dano, +3 energia | Realeza |
+| Capa | Capa Vermelha | Comum | +7 vida | Aconchego |
+| Capa | Capa de Viagem | Raro | +10% escudo, +3 energia | Mão na Massa |
+| Capa | Capa Estrelada | Épico | +5% crítico, +8 vida | Realeza |
+| Amuleto | Trevo de Quatro Folhas | Comum | +4% crítico | Sorte Grande |
+| Amuleto | Coração de Pelúcia | Comum | +8 vida | Aconchego |
+| Amuleto | Ampulheta | Raro | +4 energia | Arcano |
+| Amuleto | Estrela Dourada | Épico | +10% dano | Realeza |
 
-- O **chapéu aparece no herói**: na luta, na tela principal, na folha e no level up (`hero.mage+crown`). A primeira peça de cada espaço já vai para o corpo.
+- **Conjuntos:** duas peças vestidas do mesmo conjunto somam um bônus extra: Sorte Grande +4% crítico, Aconchego +8 vida, Mão na Massa +5% dano, Arcano +3 energia, Realeza +5% dano.
+- **Aprimorar:** fragmentos sobem a peça uma raridade (comum → raro custa 5; raro → épico custa 10). Cada passo soma 50% ao bônus original. Peça épica não sobe mais. A raridade mostrada (moldura e texto) é a aprimorada.
+- **Chapéu, arma e capa aparecem no herói.** O chapéu é variação do quadro (`hero.mage+crown`). Capa e arma são camadas com a mesma câmera: a capa vai por baixo do quadro, a arma por cima (o objeto da mão do herói muda de material: brasa, gelo ou ouro). Chaves `layer.mage+cape-red`, `layer.mage+weapon-frost` (`heroLayers`). A primeira peça de cada espaço já vai para o corpo.
 - O bônus do equipamento soma com o dos talentos (`mergeBonus`).
-- **Poções:** Garrafa d'Água (35% da vida) e Café Forte (60% da energia). Usar gasta o turno; no máximo 2 por luta; teto de 9 de cada. Saves antigos começam com uma água. As gastas saem da mochila mesmo na derrota (`applyBattleSpoils`).
-- **Mochila** na folha do herói: o que está vestido, a coleção (o que falta aparece em silhueta) e as poções.
-- Fim da luta: o baú treme e abre no item, com a moldura na cor da raridade (cinza, azul, roxo).
-- Save: `inventory: { gear: GearId[], equipped: { HEAD, CHARM }, potions: { 'potion.water', 'potion.coffee' } }` e `weeklyBoss: { weekKey, wins, beatenWeek, triedOn }` (YYYY-MM-DD). Item inventado, repetido ou vestido sem ter é descartado na leitura.
+- **Poções:** Garrafa d'Água (35% da vida) e Café Forte (60% da energia). Usar gasta o turno; no máximo 2 por luta; teto de 9 de cada. As gastas saem da mochila mesmo na derrota (`applyBattleSpoils`).
+- **Mochila** na folha do herói: os 4 espaços, o bônus vestido, os conjuntos em andamento, os fragmentos, a coleção (o que falta em silhueta) e as poções. Tocar numa peça abre o painel com Vestir/Tirar (ação principal) e Aprimorar.
+- Fim da luta: o baú treme e abre no item, com a moldura na cor da raridade (cinza, azul, roxo), vibração de sucesso e um brilho sonoro.
+- Save: `inventory: { gear, equipped: { HEAD, WEAPON, CAPE, CHARM }, potions, fragments, upgrades: { [GearId]: passos } }` e `weeklyBoss: { weekKey, wins, beatenWeek, triedOn }` (YYYY-MM-DD). Item inventado, repetido, vestido sem ter ou aprimoramento acima do épico é descartado na leitura.
+
+## Bestiário (`bestiary.ts`)
+
+Aba **Bestiário** na folha do herói: os 5 monstros dos cômodos e os 4 chefes, com quantas vezes cada um foi vencido, uma frase de cada e os dois jeitos de lutar (o que ainda não apareceu fica "ainda não visto"). Quem nunca foi vencido aparece em silhueta e "???". O jeito conta como visto mesmo na derrota; a vitória só na vitória. Save: `bestiary: { defeats: { STUDY… }, elites, bosses: { clutter: 1 }, traits: [EnemyTraitId] }`.
 
 ## Vida entre lutas
 
@@ -196,15 +233,16 @@ O que mudou nesse ajuste: difícil começa mais baixo (vida 50, atributos 4) e s
 
 - Heróis são pessoas comuns: Guerreiro de bandana com vassoura e tampa de panela, Mago estudante de óculos com café e agenda, Ladino de boné, moletom e mochila.
 - Personagens modelados no Blender por código (formas estilizadas, sombreamento toon em 3 faixas, contraluz e contorno de casco invertido). Fonte: `assets/blender/sources/battle-characters.blend` (no Git LFS); o kit está no texto `qlkit` e as poses no texto `qlpose`.
-- **Poses:** cada personagem tem 6 quadros com a câmera fixa: parado, preparo, golpe, apanhando, vitória e nocaute. As partes do corpo giram em volta do ombro e dos pés (`hero_pose`, `enemy_pose`), e o golpe aponta para o adversário na tela. Variações: herói com cada chapéu (5), monstro de elite, chefe e chefe na fase 2. São 180 quadros 640×640 em WebP (~3,6 MB) em `mobile/assets/actors/`, mais retratos recortados em `actors/portrait/` e ícones dos itens em `mobile/assets/items/`.
+- **Poses:** cada personagem tem 6 quadros com a câmera fixa: parado, preparo, golpe, apanhando, vitória e nocaute. As partes do corpo giram em volta do ombro e dos pés (`hero_pose`, `enemy_pose`), e o golpe aponta para o adversário na tela. Variações: herói com cada chapéu (5), monstro de elite, os quatro chefes e cada um na fase 2, mais as camadas de capa (3) e arma (3) de cada herói (texto `qllayers`, função `hero_batch`). São 325 quadros 640×640 em WebP (~5,2 MB) em `mobile/assets/actors/`, mais retratos recortados em `actors/portrait/` e ícones dos itens em `mobile/assets/items/`. Com capa ou arma, o retrato é montado a partir do quadro parado.
 - `scripts/gen-actor-art.py` converte os PNG do Blender em WebP e gera `src/components/actorArt.ts` (registro com `require` estático). `CharacterArt` usa o retrato fora da luta e, na arena (`mode="stage"`), deixa as 6 poses montadas e mostra só a atual: a troca não pisca. O `ActorStage` troca a pose no mesmo tempo da animação (preparo → golpe → parado; apanha ao levar dano; braços para cima em golpe em si mesmo; vitória e nocaute no fim).
 - **Cenários (v2):** 5 cômodos inteiros com luz de verdade: quarto de estudo à noite (estante, janela com lua, varal de luzinhas, escrivaninha com notebook e luminária), escritório no pôr do sol (janelão com prédios, dois monitores, pilhas de papel), academia em casa de manhã (sol entrando, tapete de yoga, halteres), cozinha à tarde (pia com louça, geladeira com ímãs, cesto de roupa) e parque à noite (pinheiros, poste, vaga-lumes). Materiais com luz (Principled), EEVEE com sombras e raytracing, brilho no compositor e AgX. Kit no texto `qlkit2` do `.blend`, raízes `arena2_*`, função `arena_render`. Saída 1080×1350 JPEG (~100–130 KB) em `mobile/assets/battle/arena-*.jpg`.
 - **Tela da luta:** a arena vai de ponta a ponta até o topo, com degradê escuro em cima (para a placa do monstro) e embaixo (para fundir com o painel). Em cima: placa do monstro (nome, vida com marcas a cada 10, nível, jeito próprio, status) e o turno. Embaixo: legenda da ação, barra do herói (vida e energia lado a lado) e os 6 golpes em cartões com ícone grande, custo no canto do ícone e recarga em cima do ícone. O painel reserva 352 de altura; a arena fica com o resto (300–560). Personagens: herói até 220, monstro 6% maior.
 - **Golpe do herói:** recua e encolhe (preparo, 150 ms), estica no avanço, o objeto do golpe sai com rastro (`SkillCast.tsx`), e no alvo: clarão, onda de choque, linhas de impacto e partículas no padrão do elemento (estouro, faíscas que sobem, cacos de gelo, bolhas, fumaça, anel). O alvo pisca branco (cópia da silhueta com `tintColor`), recua e achata. Crítico: tudo maior, número com "CRÍTICO", clarão na arena inteira e tremida.
 - **Escudo** vira uma bolha em volta do lutador enquanto durar. **Travado** mostra estrelinhas girando. Cura e bônus dão um brilho verde. Sombra no chão acompanha pulos e investidas.
 - **Começo e fim:** faixa "Fulano apareceu!" cruza a arena; monstro desce e herói entra pela esquerda. O resultado espera a última animação; na vitória, raios girando, confete e o XP contando.
-- **Trilha** (`platform/battleMusic.ts`): um loop por arena e um do chefe, gerados por `scripts/gen-music.py` (numpy + ffmpeg, MP3 64 kbps, 108–193 KB). Entra e sai com fade e abaixa no resultado. Ajustes → Música da batalha: desligada, baixa, média (padrão) ou alta; o volume alto fica abaixo dos efeitos.
-- **Som e vibração** (`platform/battleCues.ts`): sons curtos gerados por código em `mobile/assets/sfx/` (golpe, crítico, cura, escudo, deslocamento). Vibração leve ao bater, média ao apanhar, forte no crítico. Som só com Ajustes → Som ligado.
+- **Trilha** (`platform/battleMusic.ts`): um loop por arena e um de cada chefe (`boss`, `boss-clutter`, `boss-couch`, `boss-meeting`), gerados por `scripts/gen-music.py` (numpy + ffmpeg, MP3 64 kbps, 108–193 KB). Entra e sai com fade e abaixa no resultado. Ajustes → Música da batalha: desligada, baixa, média (padrão) ou alta; o volume alto fica abaixo dos efeitos.
+- **Som e vibração** (`platform/battleCues.ts`): sons curtos gerados por código em `mobile/assets/sfx/` (golpe, crítico, cura, escudo, deslocamento; `scripts/gen-sfx.py` gera os das poses: impulso no preparo, queda no nocaute, sino no jeito do monstro e na troca de fase, brilho do baú). Vibração leve ao bater, média ao apanhar e quando o jeito do monstro age, forte no crítico e no nocaute, de sucesso quando o baú abre. Som só com Ajustes → Som ligado; os tocadores são criados antes da luta (`warmBattleSounds`).
+- **Pré-carga** (`platform/preloadArt.ts`): 1,5 s depois de abrir o app, as poses do herói vestido, dos 5 monstros e do chefe da semana são baixadas (`expo-asset`). No Expo Go cada quadro vem do Metro na primeira vez; sem isso a primeira troca de pose podia piscar.
 - **Primeira luta:** dica "Como lutar" (3 linhas) até a pessoa usar um golpe ou tocar em Entendi (`settings.battleTutorialDone`).
 - **Level up:** retrato do herói pulando, o nível grande, o que ganhou (+2 atributos, +1 talento), a camada nova da árvore quando abre, confete, e "Usar os pontos" abre a folha do herói.
 - O turno do monstro espera a animação do herói: `1000 ms` até `1700 ms`, conforme o número de eventos.

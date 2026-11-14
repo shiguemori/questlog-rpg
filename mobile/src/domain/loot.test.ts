@@ -16,6 +16,17 @@ import {
   sanitizeInventory,
   spendPotions,
   unequipSlot,
+  bonusText,
+  DUPLICATE_FRAGMENTS,
+  effectiveRarity,
+  GEAR_SETS,
+  gearEffect,
+  heroLayers,
+  setProgress,
+  UPGRADE_COST,
+  upgradeBlock,
+  upgradeGear,
+  upgradeLevel,
   type LootDrop,
 } from './loot';
 
@@ -49,12 +60,24 @@ describe('rollLoot — o que o monstro deixa', () => {
     }
   });
 
-  it('não repete equipamento: com a coleção completa, vira poção', () => {
+  it('com a coleção completa, a peça repetida vira fragmentos', () => {
     const drop = rollLoot({ seed: 99, source: 'BOSS', difficulty: 'HARD', owned: GEAR_IDS });
-    assert.equal(drop?.type, 'POTION');
-    const almost = GEAR_IDS.filter((id) => id !== 'hat.crown');
-    const last = rollLoot({ seed: 7, source: 'BOSS', difficulty: 'HARD', owned: almost });
-    assert.deepEqual(last, { type: 'GEAR', id: 'hat.crown' });
+    assert.equal(drop?.type, 'FRAGMENTS');
+    assert.ok(drop?.type === 'FRAGMENTS' && drop.amount >= 4);
+  });
+
+  it('peça nova vem quase sempre; às vezes repete e vira fragmentos', () => {
+    const owned = GEAR_IDS.filter((id) => id !== 'hat.crown');
+    let fresh = 0;
+    let fragments = 0;
+    for (let seed = 1; seed <= 600; seed += 1) {
+      const drop = rollLoot({ seed: seed * 104729, source: 'BOSS', difficulty: 'HARD', owned });
+      if (drop?.type === 'GEAR') {
+        assert.equal(drop.id, 'hat.crown', 'só a peça que falta pode vir como nova');
+        fresh += 1;
+      } else if (drop?.type === 'FRAGMENTS') fragments += 1;
+    }
+    assert.ok(fresh > 0 && fragments > fresh, `nova ${fresh}, fragmentos ${fragments}`);
   });
 });
 
@@ -67,9 +90,11 @@ describe('mochila', () => {
     assert.deepEqual(inventory.gear, ['hat.cap', 'hat.crown']);
   });
 
-  it('peça repetida não duplica', () => {
+  it('peça repetida não duplica: vira fragmentos', () => {
     const once = addLoot(emptyInventory(), { type: 'GEAR', id: 'charm.star' });
-    assert.equal(addLoot(once, { type: 'GEAR', id: 'charm.star' }), once);
+    const twice = addLoot(once, { type: 'GEAR', id: 'charm.star' });
+    assert.deepEqual(twice.gear, once.gear);
+    assert.equal(twice.fragments, DUPLICATE_FRAGMENTS.EPIC);
   });
 
   it('poção respeita o teto e o gasto não fica negativo', () => {
@@ -110,6 +135,54 @@ describe('mochila', () => {
   it('rótulo do item que caiu', () => {
     assert.equal(lootLabel({ type: 'GEAR', id: 'hat.beanie' }), 'Gorro de Lã');
     assert.equal(lootLabel({ type: 'POTION', id: 'potion.coffee', amount: 2 }), '2× Café Forte');
+    assert.equal(lootLabel({ type: 'FRAGMENTS', amount: 4 }), '4 fragmentos');
+  });
+});
+
+describe('conjuntos, aprimoramento e camadas da arte', () => {
+  it('duas peças do mesmo conjunto somam o bônus do conjunto', () => {
+    let inventory = addLoot(emptyInventory(), { type: 'GEAR', id: 'hat.cap' });
+    assert.equal(gearBonus(inventory).critChance, 3);
+    inventory = addLoot(inventory, { type: 'GEAR', id: 'charm.clover' });
+    const progress = setProgress(inventory);
+    assert.equal(progress[0].set.id, 'set.luck');
+    assert.equal(progress[0].active, true);
+    assert.equal(gearBonus(inventory).critChance, 3 + 4 + GEAR_SETS['set.luck'].bonus.critChance!);
+  });
+
+  it('aprimorar gasta fragmentos, sobe a raridade e aumenta o bônus', () => {
+    let inventory = addLoot(emptyInventory(), { type: 'GEAR', id: 'weapon.ember' });
+    assert.equal(upgradeBlock(inventory, 'weapon.ember'), 'NO_FRAGMENTS');
+    inventory = addLoot(inventory, { type: 'FRAGMENTS', amount: 20 });
+    const once = upgradeGear(inventory, 'weapon.ember');
+    assert.ok(once);
+    assert.equal(once.fragments, 20 - UPGRADE_COST.COMMON);
+    assert.equal(effectiveRarity('weapon.ember', upgradeLevel(once, 'weapon.ember')), 'RARE');
+    assert.equal(gearBonus(once).damagePct, 8, '5 × 1,5 arredondado');
+    const twice = upgradeGear(once, 'weapon.ember');
+    assert.ok(twice);
+    assert.equal(effectiveRarity('weapon.ember', 2), 'EPIC');
+    assert.equal(upgradeBlock(twice, 'weapon.ember'), 'MAXED');
+    assert.equal(upgradeGear(twice, 'weapon.ember'), null);
+    assert.equal(gearEffect('weapon.ember', 2), '+10% de dano');
+  });
+
+  it('capa vai por baixo e arma por cima da arte do herói', () => {
+    let inventory = addLoot(emptyInventory(), { type: 'GEAR', id: 'cape.night' });
+    inventory = addLoot(inventory, { type: 'GEAR', id: 'weapon.frost' });
+    assert.deepEqual(heroLayers('MAGE', inventory), {
+      under: ['layer.mage+cape-night'],
+      over: ['layer.mage+weapon-frost'],
+    });
+    assert.deepEqual(heroLayers('ROGUE', emptyInventory()), { under: [], over: [] });
+  });
+
+  it('texto do bônus junta as partes', () => {
+    assert.equal(bonusText({ damagePct: 8, critChance: 4 }), '+8% de dano e +4% de crítico');
+    assert.equal(
+      bonusText({ maxHp: 4, shieldPct: 15, damagePct: 1 }),
+      '+1% de dano, +4 de vida e +15% de escudo',
+    );
   });
 });
 
@@ -127,8 +200,20 @@ describe('sanitizeInventory', () => {
       potions: { 'potion.water': 999, 'potion.coffee': -3 },
     });
     assert.deepEqual(inventory.gear, ['hat.cap', 'charm.star']);
-    assert.deepEqual(inventory.equipped, { HEAD: null, CHARM: null });
+    assert.deepEqual(inventory.equipped, { HEAD: null, WEAPON: null, CAPE: null, CHARM: null });
     assert.equal(inventory.potions['potion.water'], POTION_CAP);
+    assert.equal(
+      sanitizeInventory({
+        gear: ['hat.cap'],
+        upgrades: { 'hat.cap': 9, 'hat.crown': 1 },
+        fragments: 500,
+      }).fragments,
+      99,
+    );
+    assert.deepEqual(
+      sanitizeInventory({ gear: ['hat.cap'], upgrades: { 'hat.cap': 9, 'hat.crown': 1 } }).upgrades,
+      { 'hat.cap': 2 },
+    );
     assert.equal(inventory.potions['potion.coffee'], 0);
   });
 });

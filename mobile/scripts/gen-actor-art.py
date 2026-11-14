@@ -6,6 +6,7 @@ Uso (na pasta mobile/):
 
 Os PNG vêm do texto `qlpose` dentro de `assets/blender/sources/battle-characters.blend`
 (render_variants): `hero_warrior-cap-attack.png`, `enemy_study-elite-idle.png`, `item_hat_cap.png`.
+Capa e arma vêm do texto `qllayers` (hero_batch): `layer-mage-cape-red-idle.png`.
 Sem argumentos, só regenera o registro a partir de `assets/actors` e `assets/items`.
 """
 
@@ -27,7 +28,8 @@ def convert(png_dir: str, icon_dir: str) -> None:
         stem = os.path.basename(path)[:-4].replace("hero_", "hero-").replace("enemy_", "enemy-")
         image = Image.open(path).convert("RGBA")
         image.save(f"{ACTORS}/{stem}.webp", "WEBP", quality=82, method=6)
-        if stem.endswith("-idle"):
+        # Camadas (capa e arma) não têm retrato: o retrato com camada é montado na tela.
+        if stem.endswith("-idle") and not stem.startswith("layer-"):
             # Retrato: recorta pela transparência e centraliza num quadrado.
             box = image.getchannel("A").point(lambda v: 255 if v > 8 else 0).getbbox()
             crop = image.crop(box)
@@ -52,7 +54,8 @@ def convert(png_dir: str, icon_dir: str) -> None:
 
 
 def art_key(stem: str) -> str:
-    """hero-warrior-cap -> hero.warrior+cap; enemy-boss-phase2 -> enemy.boss+phase2."""
+    """hero-warrior-cap -> hero.warrior+cap; enemy-boss-phase2 -> enemy.boss+phase2;
+    layer-mage-cape-red -> layer.mage+cape-red (capa e arma por cima/baixo do herói)."""
     parts = stem.split("-")
     base = f"{parts[0]}.{parts[1]}"
     return base + ("+" + "-".join(parts[2:]) if len(parts) > 2 else "")

@@ -1,3 +1,6 @@
+import { BOSS_IDS, type BattleState, type BossId } from './battle';
+import { recordBattle } from './battleRecords';
+import type { Challenge } from './challenges';
 import { localIsoDate, shiftIsoDate, weekdayIndex } from './dates';
 import { addLoot, rollLoot, spendPotions, type LootDrop, type PotionStock } from './loot';
 import type { AppState, WeeklyBoss } from './types';
@@ -5,7 +8,7 @@ import { settleHeroVitals } from './vitals';
 import { applyXp } from './xp';
 
 /**
- * Chefe da semana (Procrastinação).
+ * Chefe da semana. Quatro chefes em rodízio, um por semana (ver `BOSSES` em `battle.ts`).
  *
  * - Aparece depois de BOSS_WINS_NEEDED vitórias na semana (segunda a domingo).
  * - Uma tentativa por dia. Vencido, some até a semana seguinte.
@@ -28,6 +31,23 @@ export function weekKeyOf(isoDate: string): string {
   return shiftIsoDate(isoDate, -((weekday + 6) % 7)) ?? isoDate;
 }
 
+/** Segunda-feira de referência do rodízio. */
+const ROTATION_EPOCH = Date.UTC(2026, 0, 5);
+const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+
+/** Chefe da semana que começa em `weekKey` (segunda-feira). */
+export function bossOfWeek(weekKey: string): BossId {
+  const [year, month, day] = weekKey.split('-').map(Number);
+  const weeks = Math.round((Date.UTC(year, month - 1, day) - ROTATION_EPOCH) / WEEK_MS);
+  const index = ((weeks % BOSS_IDS.length) + BOSS_IDS.length) % BOSS_IDS.length;
+  return BOSS_IDS[index] ?? 'procrastination';
+}
+
+/** Chefe da semana de hoje. */
+export function bossOfToday(now: Date): BossId {
+  return bossOfWeek(weekKeyOf(localIsoDate(now)));
+}
+
 export type BossAvailability = 'TOO_EARLY' | 'LOCKED' | 'READY' | 'TRIED_TODAY' | 'BEATEN';
 
 export interface BossStatus {
@@ -35,6 +55,7 @@ export interface BossStatus {
   /** Vitórias desta semana (teto: BOSS_WINS_NEEDED). */
   wins: number;
   needed: number;
+  bossId: BossId;
 }
 
 export function bossStatus(boss: WeeklyBoss, now: Date, heroLevel: number): BossStatus {
@@ -46,7 +67,7 @@ export function bossStatus(boss: WeeklyBoss, now: Date, heroLevel: number): Boss
   else if (boss.beatenWeek === week) availability = 'BEATEN';
   else if (wins >= BOSS_WINS_NEEDED)
     availability = boss.triedOn === today ? 'TRIED_TODAY' : 'READY';
-  return { availability, wins, needed: BOSS_WINS_NEEDED };
+  return { availability, wins, needed: BOSS_WINS_NEEDED, bossId: bossOfWeek(week) };
 }
 
 /** Conta uma vitória de quest na semana. A semana nova zera a contagem. */
@@ -66,6 +87,9 @@ export interface BossOutcome {
   leveledUp: boolean;
   newLevel: number | null;
   drop: LootDrop | null;
+  /** Desafios do dia que fecharam com esta luta. */
+  challengesFinished: Challenge[];
+  challengeBonus: LootDrop | null;
 }
 
 /**
@@ -81,6 +105,8 @@ export function settleBossBattle(
     now: Date;
     /** Poções gastas na luta. */
     potionsUsed?: Partial<PotionStock>;
+    /** A luta inteira (bestiário, desafios e resumo da semana). */
+    battle?: BattleState;
   },
 ): BossOutcome {
   const today = localIsoDate(input.now);
@@ -119,18 +145,30 @@ export function settleBossBattle(
     triedOn: today,
     beatenWeek: input.won ? week : state.weeklyBoss.beatenWeek,
   };
+  const settled: AppState = {
+    ...state,
+    character,
+    inventory,
+    weeklyBoss,
+    stats: { ...state.stats, totalXpEarned: state.stats.totalXpEarned + xpAwarded },
+  };
+  const records = input.battle
+    ? recordBattle(settled, {
+        battle: input.battle,
+        won: input.won,
+        now: input.now,
+        difficulty: 'HARD',
+        drop,
+      })
+    : { state: settled, finished: [], bonus: null };
   return {
-    state: {
-      ...state,
-      character,
-      inventory,
-      weeklyBoss,
-      stats: { ...state.stats, totalXpEarned: state.stats.totalXpEarned + xpAwarded },
-    },
+    state: records.state,
     xpAwarded,
     leveledUp,
     newLevel,
     drop,
+    challengesFinished: records.finished,
+    challengeBonus: records.bonus,
   };
 }
 

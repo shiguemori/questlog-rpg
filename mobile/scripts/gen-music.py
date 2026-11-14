@@ -181,6 +181,21 @@ SONGS = {
                  bass=[0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5], bass_gain=0.26, arp=[0, 1, 2, 3, 2, 1, 0, 1],
                  arp_kind="square", arp_gain=0.08, kicks=[0, 1, 2, 3], kick_gain=0.55,
                  ticks=[0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5], hats=[], seed=7),
+    # Montanha de Tralha: tropeçando, tudo caindo.
+    "boss-clutter": dict(bpm=132, progression=[("E", "min", 3), ("C", "maj", 3), ("F#", "dom7", 3), ("B", "dom7", 3)],
+                         bass=[0, 0.75, 1.5, 2, 2.75, 3.5], bass_gain=0.26, arp=[0, 2, 1, 3, 0, 3, 1, 2],
+                         arp_kind="square", arp_gain=0.08, kicks=[0, 1.5, 2, 3.5], kick_gain=0.55,
+                         hats=[0.5, 1, 2.5, 3], hat_gain=0.14, seed=11),
+    # Sedentarismo: groove arrastado, preguiçoso e pesado.
+    "boss-couch": dict(bpm=96, progression=[("G", "min", 3), ("Eb", "maj", 3), ("C", "min", 3), ("D", "dom7", 3)],
+                       bass=[0, 1.5, 2, 3], bass_gain=0.3, arp=[0, None, 2, None, 1, None, 3, 2],
+                       arp_kind="square", arp_gain=0.08, arp_decay=0.4, kicks=[0, 2, 2.5], kick_gain=0.6,
+                       hats=[1, 3], hat_gain=0.1, pad="sine", pad_gain=0.08, seed=13),
+    # Reunião Infinita: o mesmo compasso sem fim, cada vez mais tenso.
+    "boss-meeting": dict(bpm=124, progression=[("A", "min", 3), ("A", "min", 3), ("F", "maj", 3), ("E", "dom7", 3)],
+                         bass=[0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5], bass_gain=0.24, arp=[0, 1, 0, 2, 0, 1, 0, 3],
+                         arp_kind="square", arp_gain=0.07, kicks=[0, 1, 2, 3], kick_gain=0.5,
+                         ticks=[0.5, 1.5, 2.5, 3.5], hats=[0.25, 0.75, 1.25, 1.75], hat_gain=0.08, seed=17),
 }
 
 
@@ -202,6 +217,11 @@ def write_mp3(name: str, samples: np.ndarray) -> None:
 
 
 if __name__ == "__main__":
+    import sys
+
+    only = set(sys.argv[1:])
     for key, spec in SONGS.items():
+        if only and key not in only:
+            continue
         write_mp3(key, song(spec))
         print(key, f"{os.path.getsize(f'{OUT}/{key}.mp3') / 1024:.0f} KB")

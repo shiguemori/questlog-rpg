@@ -4,7 +4,9 @@ import { MAX_XP_QUESTS_PER_DAY } from './antiFarm';
 import { completeQuest, planQuestCompletion } from './completeQuest';
 import { CLASS_DEFAULTS, INITIAL_MAX_XP } from './constants';
 import { localIsoDate } from './dates';
+import { emptyBestiary } from './bestiary';
 import { emptyWeeklyBoss } from './boss';
+import { emptyDailyChallenges } from './challenges';
 import { emptyInventory } from './loot';
 import { defaultPlayerSettings } from './state';
 import type { AppState, Quest } from './types';
@@ -47,6 +49,9 @@ function makeState(overrides: Partial<AppState> = {}): AppState {
     },
     inventory: emptyInventory(),
     weeklyBoss: emptyWeeklyBoss(),
+    dailyChallenges: emptyDailyChallenges(),
+    weeks: [],
+    bestiary: emptyBestiary(),
     settings: defaultPlayerSettings(),
     ...overrides,
   };

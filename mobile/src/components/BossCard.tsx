@@ -1,6 +1,6 @@
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { BOSS_NAME } from '../domain/battle';
+import { BOSSES } from '../domain/battle';
 import { BOSS_MIN_LEVEL, bossStatus, bossXpFor } from '../domain/boss';
 import type { WeeklyBoss } from '../domain/types';
 import { colors } from '../theme/colors';
@@ -17,7 +17,7 @@ const COPY = {
 } as const;
 
 /**
- * Chefe da semana na tela principal: progresso das vitórias e, quando liberado,
+ * Chefe da semana na tela principal (um dos quatro, em rodízio): progresso das vitórias e, quando liberado,
  * o botão para lutar. Nos outros estados não há ação.
  */
 export function BossCard({
@@ -32,6 +32,7 @@ export function BossCard({
   onStart: () => void;
 }) {
   const status = bossStatus(boss, now, level);
+  const def = BOSSES[status.bossId];
   const ready = status.availability === 'READY';
   const line =
     status.availability === 'LOCKED'
@@ -41,11 +42,11 @@ export function BossCard({
   return (
     <View style={[styles.card, ready && styles.cardReady]} testID="boss-card">
       <View style={[styles.portrait, status.availability === 'BEATEN' && styles.portraitDone]}>
-        <CharacterArt assetKey="enemy.boss" size={46} accessibilityLabel={BOSS_NAME} />
+        <CharacterArt assetKey={def.assetKey} size={46} accessibilityLabel={def.name} />
       </View>
       <View style={styles.copy}>
         <Text style={styles.title} numberOfLines={1}>
-          {BOSS_NAME}
+          {def.name}
         </Text>
         <Text style={styles.kicker}>Chefe da semana</Text>
         <Text style={styles.line} numberOfLines={2}>
@@ -69,7 +70,7 @@ export function BossCard({
           style={({ pressed }) => [styles.cta, pressed && styles.pressed]}
           onPress={onStart}
           accessibilityRole="button"
-          accessibilityLabel={`Enfrentar ${BOSS_NAME}, chefe da semana`}
+          accessibilityLabel={`Enfrentar ${def.name}, chefe da semana`}
           accessibilityHint={`Vale ${bossXpFor(level)} de XP e um equipamento raro ou épico.`}
         >
           <Text style={styles.ctaText}>Enfrentar</Text>
