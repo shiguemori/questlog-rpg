@@ -17,6 +17,7 @@ Fonte de verdade no app: `mobile/src/domain/*`.
 | MEDIUM | 25 |
 | HARD | 50 |
 
+- Classes: Guerreiro, Mago, Ladino, Arqueiro, Druida, Bardo e Monge (`CLASS_DEFAULTS`). Cada uma ataca com um atributo (`CLASS_OFFENSE`) e tem a própria energia (Disposição, Foco, Fôlego, Mira, Seiva, Ritmo, Paz).
 - Level up: enquanto `xp >= maxXp`, sobe nível; `maxXp = floor(maxXp * 1.5)`; +2 pontos de atributo.
 - Streak: dias consecutivos com pelo menos 1 quest concluída.
 - Meta do dia: 1 conclusão (com ou sem XP). O anti-farm não muda: XP só depois de 1 min e no máximo 10 quests com XP por dia.

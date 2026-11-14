@@ -60,6 +60,14 @@ const CHEER_HOLD_MS = 520;
 function textFor(event: BattleEvent, side: BattleSide): TextSpec | null {
   switch (event.kind) {
     case 'DAMAGE':
+      if (event.combo) {
+        return {
+          text: `${event.amount}`,
+          color: '#FBBF24',
+          big: true,
+          label: event.crit ? 'COMBO CRÍTICO' : 'COMBO!',
+        };
+      }
       return event.crit
         ? { text: `${event.amount}`, color: '#FDE047', big: true, label: 'CRÍTICO' }
         : { text: `${event.amount}`, color: side === 'PLAYER' ? '#FCA5A5' : '#FFFFFF' };
@@ -113,7 +121,7 @@ function effectsFor(events: readonly BattleEvent[], side: BattleSide): StageEffe
         key: `fx-${event.seq}`,
         type: 'fx',
         fx,
-        big: event.crit,
+        big: event.crit || event.combo,
         delay: delay + 70,
         offset: 0,
       });
@@ -289,12 +297,12 @@ export function ActorStage({
           withSequence(
             withTiming(1, { duration: 40 }),
             withTiming(0.2, { duration: 90 }),
-            withTiming(event.crit ? 0.9 : 0.6, { duration: 50 }),
+            withTiming(event.crit || event.combo ? 0.9 : 0.6, { duration: 50 }),
             withTiming(0, { duration: 180 }),
           ),
         );
         if (!reduceMotion) {
-          const amp = event.crit ? 14 : event.kind === 'TICK' ? 4 : 8;
+          const amp = event.crit || event.combo ? 14 : event.kind === 'TICK' ? 4 : 8;
           shake.value = withDelay(
             at,
             withSequence(

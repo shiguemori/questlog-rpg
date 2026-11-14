@@ -63,10 +63,14 @@ import { colors } from '../theme/colors';
 import { radius, space } from '../theme/spacing';
 
 /** Cenário atrás do herói no topo: o cômodo que combina com a classe. */
-const HERO_BACKDROP: Record<string, ImageSourcePropType> = {
+const HERO_BACKDROP: Record<CharacterClass, ImageSourcePropType> = {
   WARRIOR: require('../../assets/battle/arena-health.jpg'),
   MAGE: require('../../assets/battle/arena-study.jpg'),
   ROGUE: require('../../assets/battle/arena-other.jpg'),
+  ARCHER: require('../../assets/battle/arena-work.jpg'),
+  DRUID: require('../../assets/battle/arena-home.jpg'),
+  BARD: require('../../assets/battle/arena-other.jpg'),
+  MONK: require('../../assets/battle/arena-health.jpg'),
 };
 
 interface QuestLogScreenProps {

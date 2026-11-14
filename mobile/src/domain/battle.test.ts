@@ -16,6 +16,8 @@ import {
   type BattleActor,
   type BattleState,
   type StatusEffect,
+  CLASS_OFFENSE,
+  TALENT_SKILLS,
 } from './battle';
 import { CLASS_DEFAULTS } from './constants';
 import type { Attributes, Category, Character, CharacterClass, Difficulty } from './types';
@@ -87,6 +89,13 @@ describe('catálogo', () => {
     assert.equal(HERO_SKILLS.WARRIOR[0].scaling, 'strength');
     assert.equal(HERO_SKILLS.MAGE[0].scaling, 'intelligence');
     assert.equal(HERO_SKILLS.ROGUE[0].scaling, 'agility');
+    // Toda classe tem o golpe grátis no próprio atributo de ataque.
+    for (const cls of Object.keys(HERO_SKILLS) as CharacterClass[]) {
+      assert.equal(HERO_SKILLS[cls][0].scaling, CLASS_OFFENSE[cls], cls);
+      assert.equal(HERO_SKILLS[cls][0].cost, 0, cls);
+      assert.equal(TALENT_SKILLS[cls].length, 4, cls);
+    }
+    assert.equal(Object.keys(HERO_SKILLS).length, 7);
   });
 
   it('cada categoria tem um monstro com 4 golpes próprios', () => {
@@ -313,6 +322,10 @@ describe('fluxo da luta', () => {
       WARRIOR: ['warrior.execute', 'warrior.warcry', 'warrior.strike'],
       MAGE: ['mage.fireball', 'mage.meteor', 'mage.spark'],
       ROGUE: ['rogue.venom', 'rogue.backstab', 'rogue.stab'],
+      ARCHER: ['archer.pin', 'archer.snipe', 'archer.shot'],
+      DRUID: ['druid.compost', 'druid.thorn'],
+      BARD: ['bard.earworm', 'bard.encore', 'bard.riff'],
+      MONK: ['monk.finisher', 'monk.palm'],
     };
     for (const cls of Object.keys(plan) as CharacterClass[]) {
       for (const category of Object.keys(ENEMY_SKILLS) as Category[]) {

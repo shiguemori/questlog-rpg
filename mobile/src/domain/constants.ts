@@ -48,6 +48,26 @@ export const CLASS_DEFAULTS: Record<
     label: 'Ladino',
     blurb: 'Agilidade para rotinas rápidas e consistentes.',
   },
+  ARCHER: {
+    attributes: { strength: 2, intelligence: 2, agility: 5, vitality: 3 },
+    label: 'Arqueiro',
+    blurb: 'Mira certeira e críticos para metas bem definidas.',
+  },
+  DRUID: {
+    attributes: { strength: 1, intelligence: 5, agility: 1, vitality: 4 },
+    label: 'Druida',
+    blurb: 'Cura e paciência para cuidar de si e da casa.',
+  },
+  BARD: {
+    attributes: { strength: 1, intelligence: 5, agility: 3, vitality: 2 },
+    label: 'Bardo',
+    blurb: 'Música que anima você e cansa o monstro.',
+  },
+  MONK: {
+    attributes: { strength: 2, intelligence: 2, agility: 2, vitality: 5 },
+    label: 'Monge',
+    blurb: 'Força interior: resiste, se cura e bate com calma.',
+  },
 };
 
 export const DIFFICULTY_LABELS: Record<Difficulty, string> = {

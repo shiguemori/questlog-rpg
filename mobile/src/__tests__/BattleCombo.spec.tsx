@@ -27,9 +27,12 @@ jest.mock('react-native-reanimated', () => {
 
 import { fireEvent, render, screen } from '@testing-library/react-native';
 import React from 'react';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { SkillDetail, SkillGrid } from '../components/battle/BattleHud';
+import { skillArtFor, skillMotionFor } from '../components/battle/SkillCast';
 import { DailyChallengesCard } from '../components/DailyChallengesCard';
-import { startBattle, type BattleActor } from '../domain/battle';
+import { OnboardingScreen } from '../screens/OnboardingScreen';
+import { HERO_SKILLS, startBattle, TALENT_SKILLS, type BattleActor } from '../domain/battle';
 import { CLASS_DEFAULTS } from '../domain/constants';
 
 function rogueBattle() {
@@ -55,14 +58,14 @@ describe('combo de habilidades', () => {
     const battle = rogueBattle();
     const props = { hero: battle.hero, disabled: false, onSkill: jest.fn(), onInspect: jest.fn() };
     const view = await render(<SkillGrid {...props} enemy={battle.enemy} />);
-    expect(screen.queryByText(/^Combo · /)).toBeNull();
+    expect(screen.queryByText(/^Combo /)).toBeNull();
 
     const poisoned: BattleActor = {
       ...battle.enemy,
       statuses: [{ id: 'POISON', turns: 2, potency: 3, stacks: 1 }],
     };
     await view.rerender(<SkillGrid {...props} enemy={poisoned} />);
-    expect(screen.getAllByText(/^Combo · /)).toHaveLength(1);
+    expect(screen.getAllByText(/^Combo /)).toHaveLength(1);
     expect(screen.getByLabelText('Usar Pegadinha').props.accessibilityHint).toMatch(
       /^Combo pronto/,
     );
@@ -77,6 +80,17 @@ describe('combo de habilidades', () => {
     );
     expect(screen.getByText('Combina com')).toBeTruthy();
     expect(screen.getByText('Pegadinha')).toBeTruthy();
+  });
+});
+
+describe('arte das habilidades', () => {
+  it('todo golpe das 7 classes tem ícone e movimento', () => {
+    const all = [...Object.values(HERO_SKILLS).flat(), ...Object.values(TALENT_SKILLS).flat()];
+    expect(Object.keys(HERO_SKILLS)).toHaveLength(7);
+    for (const entry of all) {
+      expect([entry.id, skillArtFor(entry.id) != null]).toEqual([entry.id, true]);
+      expect([entry.id, skillMotionFor(entry.id) != null]).toEqual([entry.id, true]);
+    }
   });
 });
 
@@ -112,5 +126,28 @@ describe('desafios recolhíveis', () => {
     );
     expect(screen.getByText('Desafios de hoje')).toBeTruthy();
     expect(screen.queryByText(/Os três juntos/)).toBeNull();
+  });
+});
+
+describe('escolha de classe', () => {
+  it('mostra as 7 classes e o detalhe da escolhida', async () => {
+    const onComplete = jest.fn();
+    await render(
+      <SafeAreaProvider
+        initialMetrics={{
+          frame: { x: 0, y: 0, width: 375, height: 812 },
+          insets: { top: 0, left: 0, right: 0, bottom: 0 },
+        }}
+      >
+        <OnboardingScreen onComplete={onComplete} />
+      </SafeAreaProvider>,
+    );
+    expect(screen.getAllByRole('radio')).toHaveLength(7);
+    await fireEvent.press(screen.getByLabelText('Bardo. Música que anima você e cansa o monstro.'));
+    expect(screen.getByText('Música Chiclete')).toBeTruthy();
+    expect(screen.getByText(/energia: Ritmo/)).toBeTruthy();
+    await fireEvent.changeText(screen.getByLabelText('Nome do herói'), 'Lia');
+    await fireEvent.press(screen.getByText('Começar jornada'));
+    expect(onComplete).toHaveBeenCalledWith('Lia', 'BARD');
   });
 });

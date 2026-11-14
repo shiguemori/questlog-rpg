@@ -59,6 +59,29 @@ Toda classe tem **Respirar Fundo** (guarda 50% no próximo golpe, +3 energia).
 | | Pegadinha | 7 | 2 | 7 + 1,6×AGI, crítico certo se incomodado |
 | | Multitarefa | 6 | 3 | 3 golpes, cada um rola crítico |
 
+| Arqueiro (Mira) | Elástico | 0 | – | 5 + 1,25×AGI, +10% crítico |
+| | Tachinha | 4 | – | dano + incomodado (acumula até 3) |
+| | Chuva de Clipes | 6 | 3 | 3 golpes, cada um rola crítico |
+| | Mirar com Calma | 4 | 4 | Animado +35% por 3 turnos |
+| | Tiro Certeiro | 8 | 3 | 7 + 1,3×AGI, +50% em alvo incomodado |
+| Druida (Seiva) | Cutucada de Cacto | 0 | – | 5 + 1,15×INT, mental |
+| | Composteira | 5 | – | dano + incomodado 3 turnos |
+| | Trepadeira | 6 | 3 | dano + trava 1 turno |
+| | Regar as Plantas | 4 | 3 | descansando 3 turnos (3 + 0,7×INT) |
+| | Casca de Árvore | 4 | 2 | escudo 4 + 2,2×VIT |
+| Bardo (Ritmo) | Riff de Violão | 0 | – | 5 + 1,2×INT, mental |
+| | Música Chiclete | 4 | – | dano + incomodado (acumula até 3) |
+| | Nota Desafinada | 4 | 3 | dano + monstro cansado 2 turnos |
+| | Hino da Galera | 4 | 4 | Animado +40% por 3 turnos |
+| | Bis! | 8 | 3 | 8 + 1,45×INT, +50% em alvo incomodado |
+| Monge (Paz) | Palma Aberta | 0 | – | 4 + 0,9×VIT |
+| | Saudação ao Sol | 5 | 3 | 3 golpes, cada um rola crítico |
+| | Meditação | 2 | 3 | descansando 3 turnos (3 + 0,4×VIT) e +3 energia |
+| | Postura da Montanha | 4 | 2 | escudo 5 + 1,8×VIT |
+| | Golpe Zen | 7 | 2 | 7 + 1×VIT, +60% com alvo ≤35% |
+
+O Monge é a única classe que ataca com Vitalidade: o mesmo atributo dá vida e dano, por isso os golpes dele têm razão menor. Talentos das classes novas: Arqueiro (Avião de Papel, Atrás do Sofá, Garrafinha, Chuva de Elásticos), Druida (Pólen, Banho de Sol, Chá de Ervas, Floresta Inteira), Bardo (Canção de Ninar, Fone Antirruído, Chá com Mel, Show Lotado), Monge (Ponto de Pressão, Água com Limão, Silêncio, Sopro do Dragão).
+
 Habilidades da árvore de talentos (começam bloqueadas):
 
 | Classe | Habilidade | Custo | Recarga | Efeito |
@@ -76,7 +99,7 @@ Habilidades da árvore de talentos (começam bloqueadas):
 | | Energético | 0 | 4 | +5 energia e Animado +30% por 2 turnos |
 | | Entrega Expressa | 10 | 4 | 4 golpes + incomodado 3 turnos |
 
-**Combos** (`comboPartners`, `comboReady`): um golpe com bônus condicional combina com o golpe do mesmo herói que deixa o status pedido. Lembrete Chato → Pegadinha (incomodado) e Café Fervendo → Lista Riscada (fervendo). Quando o bônus vale agora, o botão ganha borda âmbar e o rótulo "Combo"; segurar o golpe mostra "Combina com" e, se for o caso, "Combo: pronto agora". Golpes de vida baixa (Faxina Final, Aspirador Turbo) também acendem quando o monstro está com 35% ou menos.
+**Combos** (`comboPartners`, `comboReady`): um golpe com bônus condicional combina com o golpe do mesmo herói que deixa o status pedido. Lembrete Chato → Pegadinha, Café Fervendo → Lista Riscada, Tachinha → Tiro Certeiro, Música Chiclete → Bis!, Composteira → Floresta Inteira. O dano que veio de combo sai marcado no evento (`combo: true`) e aparece como "COMBO!" com estouro grande, tremor e vibração forte. Quando o bônus vale agora, o botão ganha borda âmbar e o rótulo "Combo"; segurar o golpe mostra "Combina com" e, se for o caso, "Combo: pronto agora". Golpes de vida baixa (Faxina Final, Aspirador Turbo) também acendem quando o monstro está com 35% ou menos.
 
 **Como lutar**: a dica abre sozinha só na primeira luta (fica marcada como vista já no começo dela, para o fim da luta não desfazer). Depois, o botão "?" no canto de cima abre e fecha a dica. A descrição do golpe (segurar) aparece no meio da tela.
 
@@ -277,3 +300,7 @@ npx expo start -c
 - Segure um golpe para ler o que ele faz. Use Respirar Fundo ou escudo quando a vida cair.
 - No nível 2, abra a folha do herói → Talentos e aprenda o primeiro talento; em Golpes, troque o que vai para a luta.
 - Depois da luta, a vida na tela principal fica como terminou e sobe com o tempo.
+
+## Arte dos heróis (v2)
+
+Os 7 heróis são montados pelos textos `qlhero` (corpo: olhos com íris, pupila e dois brilhos, sobrancelha, boca, bochechas, mão com polegar, tênis com sola e cadarço) e `qlhero_cls` (cabelo, roupa e objetos de cada classe) dentro de `battle-characters.blend`. `hero_batch2(root)` renderiza as 12 variantes × 6 poses de um herói; `scripts/gen-actor-art.py` converte para `assets/actors`. Os ícones dos golpes das classes novas vêm do texto `qlprops` (`render_prop`).

@@ -22,22 +22,19 @@ import {
   startBattle,
   type BattleSkill,
   type BattleState,
+  CLASS_OFFENSE,
 } from '../src/domain/battle';
 import { CLASS_DEFAULTS, ATTRIBUTE_POINTS_PER_LEVEL } from '../src/domain/constants';
 import { battleSkillsFor, heroBonus, TALENT_TREES, TALENT_TIER_LEVEL } from '../src/domain/talents';
 import type { Category, Character, CharacterClass, Difficulty } from '../src/domain/types';
 
-const CLASSES: CharacterClass[] = ['WARRIOR', 'MAGE', 'ROGUE'];
+const CLASSES: CharacterClass[] = ['WARRIOR', 'MAGE', 'ROGUE', 'ARCHER', 'DRUID', 'BARD', 'MONK'];
 const CATEGORIES: Category[] = ['STUDY', 'WORK', 'HEALTH', 'HOME', 'OTHER'];
 const DIFFICULTIES: Difficulty[] = ['EASY', 'MEDIUM', 'HARD'];
 const LEVELS = [1, 3, 5, 8];
 const RUNS = 300;
 
-const OFFENSE: Record<CharacterClass, 'strength' | 'intelligence' | 'agility'> = {
-  WARRIOR: 'strength',
-  MAGE: 'intelligence',
-  ROGUE: 'agility',
-};
+const OFFENSE = CLASS_OFFENSE;
 
 function buildHero(cls: CharacterClass, level: number): Character {
   const attributes = { ...CLASS_DEFAULTS[cls].attributes };

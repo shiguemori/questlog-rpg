@@ -459,7 +459,9 @@ export function SkillGrid({
                   ]}
                   numberOfLines={1}
                 >
-                  {combo ? `Combo · ${status}` : status}
+                  {combo
+                    ? `Combo ${status.replace(' dano total', '').replace(' dano', '')}`
+                    : status}
                 </Text>
               </View>
             </PressScale>

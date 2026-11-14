@@ -10,11 +10,13 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { HeroAvatar } from '../components/HeroAvatar';
-import { CLASS_DEFAULTS } from '../domain/constants';
+import { CharacterArt } from '../components/CharacterArt';
+import { CLASS_ENERGY_LABEL, CLASS_OFFENSE, HERO_SKILLS } from '../domain/battle';
+import { ATTRIBUTE_LABELS, CLASS_DEFAULTS } from '../domain/constants';
 import { HERO_NAME_MAX_LENGTH } from '../domain/state';
 import type { CharacterClass } from '../domain/types';
 import { colors } from '../theme/colors';
+import { radius, space } from '../theme/spacing';
 
 interface OnboardingScreenProps {
   onComplete: (name: string, characterClass: CharacterClass) => void;
@@ -49,9 +51,6 @@ export function OnboardingScreen({ onComplete }: OnboardingScreenProps) {
       style={[styles.screen, { paddingTop: insets.top }]}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      <View style={styles.atmosphere} pointerEvents="none">
-        <View style={styles.glowOrb} />
-      </View>
       <ScrollView
         contentContainerStyle={[styles.container, { paddingBottom: insets.bottom + 24 }]}
         keyboardShouldPersistTaps="handled"
@@ -67,15 +66,6 @@ export function OnboardingScreen({ onComplete }: OnboardingScreenProps) {
           <Text style={styles.promiseBody}>
             Abra, feche 1 quest e veja a meta. Amanhã o streak pede só isso. Sem alerta insistente.
           </Text>
-        </View>
-
-        <View style={styles.preview}>
-          <HeroAvatar
-            characterClass={characterClass}
-            initial={trimmedName || undefined}
-            size={96}
-          />
-          <Text style={styles.previewClass}>{CLASS_DEFAULTS[characterClass].label}</Text>
         </View>
 
         <Text style={styles.label}>Nome do herói</Text>
@@ -98,7 +88,7 @@ export function OnboardingScreen({ onComplete }: OnboardingScreenProps) {
         ) : null}
 
         <Text style={styles.label}>Classe</Text>
-        <View style={styles.classRow} accessibilityRole="radiogroup">
+        <View style={styles.classGrid} accessibilityRole="radiogroup">
           {CLASSES.map((cls) => {
             const meta = CLASS_DEFAULTS[cls];
             const selected = characterClass === cls;
@@ -111,17 +101,16 @@ export function OnboardingScreen({ onComplete }: OnboardingScreenProps) {
                 accessibilityState={{ selected, checked: selected }}
                 accessibilityLabel={`${meta.label}. ${meta.blurb}`}
               >
-                <HeroAvatar characterClass={cls} size={40} />
-                <View style={styles.classCopy}>
-                  <Text style={[styles.classLabel, selected && styles.classLabelSelected]}>
-                    {meta.label}
-                  </Text>
-                  <Text style={styles.classBlurb}>{meta.blurb}</Text>
-                </View>
+                <CharacterArt assetKey={`hero.${cls.toLowerCase()}`} size={88} />
+                <Text style={[styles.classLabel, selected && styles.classLabelSelected]}>
+                  {meta.label}
+                </Text>
+                <Text style={styles.classEnergy}>{CLASS_ENERGY_LABEL[cls]}</Text>
               </Pressable>
             );
           })}
         </View>
+        <ClassDetail characterClass={characterClass} />
 
         <Pressable
           style={({ pressed }) => [styles.cta, pressed && styles.pressed]}
@@ -143,18 +132,31 @@ export function OnboardingScreen({ onComplete }: OnboardingScreenProps) {
   );
 }
 
+/** O que a classe escolhida faz: frase, ataque, energia e os golpes que já vêm com ela. */
+function ClassDetail({ characterClass }: { characterClass: CharacterClass }) {
+  const meta = CLASS_DEFAULTS[characterClass];
+  const skills = HERO_SKILLS[characterClass].slice(0, 5);
+  return (
+    <View style={styles.detail} testID="class-detail" accessibilityLiveRegion="polite">
+      <Text style={styles.detailTitle}>{meta.label}</Text>
+      <Text style={styles.detailBlurb}>{meta.blurb}</Text>
+      <Text style={styles.detailMeta}>
+        Ataque com {ATTRIBUTE_LABELS[CLASS_OFFENSE[characterClass]]} · energia:{' '}
+        {CLASS_ENERGY_LABEL[characterClass]}
+      </Text>
+      <View style={styles.skillChips}>
+        {skills.map((entry) => (
+          <Text key={entry.id} style={styles.skillChip}>
+            {entry.name}
+          </Text>
+        ))}
+      </View>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.bg },
-  atmosphere: { ...StyleSheet.absoluteFill, overflow: 'hidden' },
-  glowOrb: {
-    position: 'absolute',
-    top: -60,
-    right: -30,
-    width: 200,
-    height: 200,
-    borderRadius: 100,
-    backgroundColor: 'rgba(245, 158, 11, 0.14)',
-  },
   container: { flexGrow: 1, paddingHorizontal: 20, paddingTop: 24, gap: 12 },
   brand: {
     fontSize: 14,
@@ -186,16 +188,6 @@ const styles = StyleSheet.create({
   },
   promiseTitle: { fontSize: 14, fontWeight: '800', color: colors.amberSoft },
   promiseBody: { fontSize: 14, lineHeight: 20, color: colors.textMuted },
-  preview: {
-    alignItems: 'center',
-    gap: 10,
-    paddingVertical: 8,
-  },
-  previewClass: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: colors.amberSoft,
-  },
   label: { fontSize: 13, fontWeight: '600', color: colors.textMuted, marginTop: 4 },
   input: {
     minHeight: 48,
@@ -209,26 +201,48 @@ const styles = StyleSheet.create({
   },
   inputError: { borderColor: colors.danger },
   error: { fontSize: 13, fontWeight: '600', color: colors.danger },
-  classRow: { gap: 10 },
+  classGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    rowGap: space.sm,
+  },
+  // Duas colunas do mesmo tamanho; a sétima classe fica sozinha à esquerda.
   classCard: {
-    borderRadius: 14,
+    width: '48.5%',
+    borderRadius: radius.lg,
     borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: colors.bgElevated,
-    padding: 12,
-    minHeight: 64,
-    flexDirection: 'row',
+    paddingVertical: space.md,
+    paddingHorizontal: space.sm,
     alignItems: 'center',
-    gap: 12,
+    gap: 2,
   },
-  classCardSelected: {
-    borderColor: colors.amber,
-    backgroundColor: colors.amberWash,
-  },
-  classCopy: { flex: 1 },
-  classLabel: { fontSize: 16, fontWeight: '700', color: colors.text },
+  classCardSelected: { borderColor: colors.amber, backgroundColor: colors.amberWash },
+  classLabel: { fontSize: 16, fontWeight: '800', color: colors.text },
   classLabelSelected: { color: colors.amberSoft },
-  classBlurb: { marginTop: 4, fontSize: 13, color: colors.textMuted },
+  classEnergy: { fontSize: 12, color: colors.textMuted },
+  detail: {
+    borderRadius: radius.lg,
+    backgroundColor: colors.bgElevated,
+    padding: space.lg,
+    gap: space.xs,
+  },
+  detailTitle: { fontSize: 18, fontWeight: '800', color: colors.amberSoft },
+  detailBlurb: { fontSize: 15, lineHeight: 21, color: colors.text },
+  detailMeta: { fontSize: 13, color: colors.textMuted },
+  skillChips: { flexDirection: 'row', flexWrap: 'wrap', gap: space.xs, marginTop: space.xs },
+  skillChip: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.text,
+    backgroundColor: colors.bgSoft,
+    borderRadius: radius.sm,
+    paddingHorizontal: space.sm,
+    paddingVertical: 4,
+    overflow: 'hidden',
+  },
   cta: {
     marginTop: 'auto',
     minHeight: 52,

@@ -74,7 +74,8 @@ export function cueFor(
         ? { at, cue: null, haptic: Haptics.ImpactFeedbackStyle.Light }
         : null;
     case 'DAMAGE':
-      if (event.crit) return { at, cue: 'crit', haptic: Haptics.ImpactFeedbackStyle.Heavy };
+      if (event.crit || event.combo)
+        return { at, cue: 'crit', haptic: Haptics.ImpactFeedbackStyle.Heavy };
       return {
         at,
         cue: 'hit',

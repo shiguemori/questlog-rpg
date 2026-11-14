@@ -16,12 +16,20 @@ const CLASS_ACCENT: Record<CharacterClass, string> = {
   WARRIOR: colors.warrior,
   MAGE: colors.mage,
   ROGUE: colors.rogue,
+  ARCHER: colors.archer,
+  DRUID: colors.druid,
+  BARD: colors.bard,
+  MONK: colors.monk,
 };
 
 const CLASS_SPRITE: Record<CharacterClass, string> = {
   WARRIOR: 'hero.warrior',
   MAGE: 'hero.mage',
   ROGUE: 'hero.rogue',
+  ARCHER: 'hero.archer',
+  DRUID: 'hero.druid',
+  BARD: 'hero.bard',
+  MONK: 'hero.monk',
 };
 
 /** Retrato do herói: sprite da classe dentro de um anel na cor da classe. */

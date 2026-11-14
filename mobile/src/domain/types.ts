@@ -5,7 +5,7 @@ import type { WeekRecord } from './weekly';
 
 export type Difficulty = 'EASY' | 'MEDIUM' | 'HARD';
 export type Category = 'STUDY' | 'WORK' | 'HEALTH' | 'HOME' | 'OTHER';
-export type CharacterClass = 'WARRIOR' | 'MAGE' | 'ROGUE';
+export type CharacterClass = 'WARRIOR' | 'MAGE' | 'ROGUE' | 'ARCHER' | 'DRUID' | 'BARD' | 'MONK';
 /** Quando a missão volta: todo dia, de segunda a sexta ou uma vez por semana. */
 export type RepeatRule = 'DAILY' | 'WEEKDAYS' | 'WEEKLY';
 

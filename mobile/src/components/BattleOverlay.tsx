@@ -208,13 +208,13 @@ function BattleScreen({
       (event) =>
         event.kind === 'DAMAGE' &&
         event.seq > lastShakeSeq.current &&
-        (event.crit || event.target === 'PLAYER'),
+        (event.crit || event.combo || event.target === 'PLAYER'),
     );
     if (index < 0) return;
     const hit = events[index];
     lastShakeSeq.current = events[events.length - 1].seq;
     const at = WINDUP_MS + index * EVENT_STEP_MS + 70;
-    const amp = hit.crit ? 9 : 4;
+    const amp = hit.crit || hit.combo ? 9 : 4;
     arenaShake.value = withDelay(
       at,
       withSequence(

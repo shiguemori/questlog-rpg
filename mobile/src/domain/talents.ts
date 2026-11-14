@@ -54,6 +54,10 @@ const CLASS_PREFIX: Record<CharacterClass, string> = {
   WARRIOR: 'warrior',
   MAGE: 'mage',
   ROGUE: 'rogue',
+  ARCHER: 'archer',
+  DRUID: 'druid',
+  BARD: 'bard',
+  MONK: 'monk',
 };
 
 function skillName(characterClass: CharacterClass, skillId: string): string {
@@ -164,6 +168,10 @@ export const TALENT_TREES: Record<CharacterClass, readonly TalentNode[]> = {
   WARRIOR: buildTree('WARRIOR'),
   MAGE: buildTree('MAGE'),
   ROGUE: buildTree('ROGUE'),
+  ARCHER: buildTree('ARCHER'),
+  DRUID: buildTree('DRUID'),
+  BARD: buildTree('BARD'),
+  MONK: buildTree('MONK'),
 };
 
 // ---------------------------------------------------------------------------

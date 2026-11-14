@@ -1,6 +1,13 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { comboPartners, comboReady, HERO_SKILLS, startBattle, type BattleActor } from './battle';
+import {
+  applyPlayerMove,
+  comboPartners,
+  comboReady,
+  HERO_SKILLS,
+  startBattle,
+  type BattleActor,
+} from './battle';
 import { CLASS_DEFAULTS } from './constants';
 import {
   focusClock,
@@ -160,6 +167,28 @@ describe('combos da batalha', () => {
     };
     assert.equal(comboReady(poisoned, backstab), true);
     assert.equal(comboReady(poisoned, skill('rogue.stab')), false);
+
+    // O dano que veio do combo sai marcado, para a tela destacar.
+    const after = applyPlayerMove(
+      { ...battle, hero: { ...battle.hero, energy: 20 }, enemy: { ...poisoned, dodgeChance: 0 } },
+      'rogue.backstab',
+    );
+    const hit = after.events.find((event) => event.kind === 'DAMAGE' && event.target === 'ENEMY');
+    assert.equal(hit?.combo, true);
+    const plain = applyPlayerMove(
+      { ...battle, enemy: { ...battle.enemy, dodgeChance: 0 } },
+      'rogue.stab',
+    );
+    const plainHit = plain.events.find((event) => event.kind === 'DAMAGE');
+    assert.equal(plainHit?.combo, undefined);
+  });
+
+  it('as classes novas também têm combo', () => {
+    assert.deepEqual(names(comboPartners(HERO_SKILLS.ARCHER, skill('archer.pin'))), [
+      'Tiro Certeiro',
+    ]);
+    assert.deepEqual(names(comboPartners(HERO_SKILLS.BARD, skill('bard.earworm'))), ['Bis!']);
+    assert.ok(comboPartners(HERO_SKILLS.DRUID, skill('druid.compost')).length === 0);
   });
 });
 

@@ -7,7 +7,7 @@ export const colors = {
   borderStrong: '#475569',
   text: '#F8FAFC',
   textMuted: '#94A3B8',
-  textDim: '#64748B',
+  textDim: '#8090A6',
   amber: '#F59E0B',
   amberSoft: '#FBBF24',
   amberDeep: '#B45309',
@@ -20,6 +20,10 @@ export const colors = {
   warrior: '#F87171',
   mage: '#38BDF8',
   rogue: '#A3E635',
+  archer: '#FB923C',
+  druid: '#4ADE80',
+  bard: '#F472B6',
+  monk: '#FACC15',
 } as const;
 
 /**
