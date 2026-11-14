@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { ConfirmDialog } from '../ConfirmDialog';
 import {
   learnTalent,
   resetTalents,
@@ -53,12 +54,8 @@ export function TalentTree({ state, onHeroChange }: TalentTreeProps) {
   const selectedStatus = talentStatus(character, selected);
   const anyLearned = tree.some((node) => talentStatus(character, node) === 'LEARNED');
 
-  const confirmReset = () => {
-    Alert.alert('Devolver talentos?', 'Todos os pontos voltam e você escolhe de novo.', [
-      { text: 'Cancelar', style: 'cancel' },
-      { text: 'Devolver', onPress: () => onHeroChange(resetTalents) },
-    ]);
-  };
+  const [asking, setAsking] = useState(false);
+  const confirmReset = () => setAsking(true);
 
   return (
     <View style={styles.wrap}>
@@ -154,6 +151,17 @@ export function TalentTree({ state, onHeroChange }: TalentTreeProps) {
           <Text style={styles.secondaryText}>Devolver pontos de talento</Text>
         </Pressable>
       ) : null}
+      <ConfirmDialog
+        visible={asking}
+        title="Devolver talentos?"
+        message="Todos os pontos voltam e você escolhe de novo."
+        confirmLabel="Devolver"
+        onCancel={() => setAsking(false)}
+        onConfirm={() => {
+          setAsking(false);
+          onHeroChange(resetTalents);
+        }}
+      />
     </View>
   );
 }

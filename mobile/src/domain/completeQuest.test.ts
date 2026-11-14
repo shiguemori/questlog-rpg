@@ -52,6 +52,7 @@ function makeState(overrides: Partial<AppState> = {}): AppState {
     dailyChallenges: emptyDailyChallenges(),
     weeks: [],
     bestiary: emptyBestiary(),
+    focus: null,
     settings: defaultPlayerSettings(),
     ...overrides,
   };

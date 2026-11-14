@@ -11,6 +11,8 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import {
+  comboPartners,
+  comboReady,
   enemyTraitOf,
   HARMFUL_STATUSES,
   STATUS_LABELS,
@@ -399,14 +401,16 @@ export function SkillGrid({
               ? `Falta ${hero.energyLabel.toLowerCase()}`
               : skillPreview(hero, enemy, entry);
         const costHint = entry.cost > 0 ? ` Custa ${entry.cost} de ${hero.energyLabel}.` : '';
+        // Combo: o bônus do golpe vale agora (ex.: Pegadinha depois do Lembrete Chato).
+        const combo = block == null && comboReady(enemy, entry);
         const accent = FX_COLORS[entry.fx];
         return (
           <View key={entry.id} style={styles.cell}>
             <PressScale
-              style={[styles.skill, off && styles.skillOff]}
+              style={[styles.skill, combo && styles.skillCombo, off && styles.skillOff]}
               accessibilityRole="button"
               accessibilityLabel={`Usar ${entry.name}`}
-              accessibilityHint={`${entry.blurb}${costHint} Segure para ver detalhes.`}
+              accessibilityHint={`${combo ? 'Combo pronto: o bônus vale agora. ' : ''}${entry.blurb}${costHint} Segure para ver detalhes.`}
               accessibilityState={{ disabled: off }}
               accessibilityActions={[{ name: 'longpress', label: 'Ver detalhes' }]}
               onAccessibilityAction={() => onInspect(entry)}
@@ -448,10 +452,14 @@ export function SkillGrid({
                   {entry.name}
                 </Text>
                 <Text
-                  style={[styles.skillStatus, block != null && styles.skillStatusBlocked]}
+                  style={[
+                    styles.skillStatus,
+                    combo && styles.skillStatusCombo,
+                    block != null && styles.skillStatusBlocked,
+                  ]}
                   numberOfLines={1}
                 >
-                  {status}
+                  {combo ? `Combo · ${status}` : status}
                 </Text>
               </View>
             </PressScale>
@@ -488,6 +496,11 @@ export function SkillDetail({
   if (block === 'ENERGY') {
     rows.push({ label: 'Falta', value: `${skill.cost - hero.energy} de ${hero.energyLabel}` });
   }
+  const partners = comboPartners(hero.skills, skill);
+  if (partners.length > 0) {
+    rows.push({ label: 'Combina com', value: partners.map((item) => item.name).join(', ') });
+  }
+  if (comboReady(enemy, skill)) rows.push({ label: 'Combo', value: 'Pronto agora' });
   const accent = FX_COLORS[skill.fx];
   return (
     <Pressable
@@ -669,6 +682,8 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   skillBg: { borderRadius: SKILL_RADIUS },
+  // Destaque leve: borda âmbar e o rótulo "Combo".
+  skillCombo: { borderColor: colors.amberSoft, borderWidth: 1.5 },
   skillOff: { opacity: 0.55 },
   // Raio interno = externo − padding (regra 14).
   socket: {
@@ -701,6 +716,7 @@ const styles = StyleSheet.create({
     color: colors.amberSoft,
     fontVariant: ['tabular-nums'],
   },
+  skillStatusCombo: { color: colors.amberSoft },
   skillStatusBlocked: { color: colors.textMuted },
   cost: {
     position: 'absolute',
@@ -726,7 +742,7 @@ const styles = StyleSheet.create({
 
   detailBackdrop: {
     ...StyleSheet.absoluteFill,
-    justifyContent: 'flex-end',
+    justifyContent: 'center',
     padding: space.lg,
     backgroundColor: 'rgba(5, 8, 20, 0.65)',
   },

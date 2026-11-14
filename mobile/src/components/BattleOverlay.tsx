@@ -74,8 +74,8 @@ export interface BattleOverlayProps {
   /** Som de golpes (Ajustes → Som). */
   soundEnabled?: boolean;
   /** Primeira batalha: mostra como lutar até a pessoa agir ou dispensar. */
+  /** Primeira luta: a dica de como lutar já abre. Depois, só pelo botão "?". */
   showTutorial?: boolean;
-  onTutorialDone?: () => void;
   /** Trilha da arena (Ajustes → Música). 0 = desligada. */
   musicVolume?: MusicVolume;
   /** Luta fácil: resolve na hora, sem animação (o herói escolhe os golpes). */
@@ -149,7 +149,6 @@ function BattleScreen({
   onUndo,
   soundEnabled = false,
   showTutorial = false,
-  onTutorialDone,
   musicVolume = 0,
   outerInsets,
 }: BattleOverlayProps & { battle: BattleState; outerInsets: EdgeInsets }) {
@@ -161,6 +160,7 @@ function BattleScreen({
   };
   const { height, width } = useWindowDimensions();
   const [inspected, setInspected] = useState<BattleSkill | null>(null);
+  const [helpOpen, setHelpOpen] = useState(showTutorial);
   const reduceMotion = useReducedMotion();
   const arenaShake = useSharedValue(0);
   const critFlash = useSharedValue(0);
@@ -347,16 +347,35 @@ function BattleScreen({
 
         <View style={[styles.topRow, { paddingTop: insets.top + space.sm }]}>
           <EnemyPlate actor={battle.enemy} reduceMotion={reduceMotion} />
-          <TurnPill
-            label={finished ? 'Fim da luta' : waiting ? `${battle.enemy.name} age` : 'Sua vez'}
-            turn={`Turno ${turnShown} de ${turnLimit}`}
-            mine={!waiting && !finished}
-            reduceMotion={reduceMotion}
-          />
+          <View style={styles.topRight}>
+            <TurnPill
+              label={finished ? 'Fim da luta' : waiting ? `${battle.enemy.name} age` : 'Sua vez'}
+              turn={`Turno ${turnShown} de ${turnLimit}`}
+              mine={!waiting && !finished}
+              reduceMotion={reduceMotion}
+            />
+            {!finished ? (
+              <Pressable
+                onPress={() => setHelpOpen((open) => !open)}
+                style={({ pressed }) => [
+                  styles.helpBtn,
+                  helpOpen && styles.helpBtnOn,
+                  pressed && styles.autoBtnPressed,
+                ]}
+                accessibilityRole="button"
+                accessibilityLabel={helpOpen ? 'Fechar dica de como lutar' : 'Como lutar'}
+                accessibilityState={{ expanded: helpOpen }}
+                hitSlop={8}
+                testID="battle-help"
+              >
+                <Text style={[styles.helpText, helpOpen && styles.helpTextOn]}>?</Text>
+              </Pressable>
+            ) : null}
+          </View>
         </View>
 
-        {showTutorial && !finished && battle.turn === 0 ? (
-          <BattleTutorial energyLabel={battle.hero.energyLabel} onDone={() => onTutorialDone?.()} />
+        {helpOpen && !finished ? (
+          <BattleTutorial energyLabel={battle.hero.energyLabel} onDone={() => setHelpOpen(false)} />
         ) : null}
         {intro ? (
           <BattleBanner text={battle.log[0]?.text ?? ''} reduceMotion={reduceMotion} />
@@ -405,7 +424,7 @@ function BattleScreen({
               battle={battle}
               disabled={waiting || finished}
               onUse={(id) => {
-                if (showTutorial) onTutorialDone?.();
+                setHelpOpen(false);
                 onItem?.(id);
               }}
             />
@@ -415,7 +434,7 @@ function BattleScreen({
                 enemy={battle.enemy}
                 disabled={waiting || finished}
                 onSkill={(skillId) => {
-                  if (showTutorial) onTutorialDone?.();
+                  setHelpOpen(false);
                   onMove(skillId);
                 }}
                 onInspect={setInspected}
@@ -476,6 +495,21 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: space.md,
   },
+  topRight: { alignItems: 'flex-end', gap: space.sm },
+  // Alvo de 44 pt com o círculo visível de 32 (hitSlop cobre o resto).
+  helpBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.35)',
+    backgroundColor: 'rgba(5, 8, 20, 0.6)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  helpBtnOn: { borderColor: colors.amber, backgroundColor: colors.amberWash },
+  helpText: { fontSize: 16, fontWeight: '900', color: colors.text, marginTop: -1 },
+  helpTextOn: { color: colors.amberSoft },
   critFlash: { ...StyleSheet.absoluteFill, backgroundColor: '#FFFFFF' },
 
   panel: {

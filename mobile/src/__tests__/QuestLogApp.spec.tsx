@@ -108,14 +108,10 @@ async function readSave(storage: KeyValueStorage): Promise<AppState> {
   return JSON.parse(raw) as AppState;
 }
 
-/** Aperta o botão do Alert nativo pelo texto (ex.: "Concluir sem XP"). */
-function pressAlertButton(alertSpy: jest.SpyInstance, text: string) {
-  const call = alertSpy.mock.calls.at(-1);
-  if (!call) throw new Error('nenhum Alert aberto');
-  const buttons = (call[2] ?? []) as { text?: string; onPress?: () => void }[];
-  const button = buttons.find((entry) => entry.text === text);
-  if (!button) throw new Error(`botão "${text}" não encontrado no Alert`);
-  button.onPress?.();
+/** A semana (dias, XP de hoje, próximo rank) fica num painel que abre pelo botão. */
+async function openWeek() {
+  await fireEvent.press(screen.getByTestId('week-open'));
+  expect(screen.getByTestId('week-sheet')).toBeTruthy();
 }
 
 async function completeOnboarding(name: string) {
@@ -155,7 +151,7 @@ describe('QuestLogApp — fluxo no aparelho', () => {
 
     // Quest por atalho: aparece com o contador do anti-farm.
     await fireEvent.press(screen.getByLabelText('Adicionar quest Estudar 25min, mais 25 de XP'));
-    expect(screen.getByText('Estudar 25min')).toBeTruthy();
+    expect(screen.getByLabelText('Concluir quest Estudar 25min')).toBeTruthy();
     expect(screen.getByText('XP libera em 60s')).toBeTruthy();
 
     await advance(61_000);
@@ -171,7 +167,9 @@ describe('QuestLogApp — fluxo no aparelho', () => {
 
     expect(screen.getByText('25/100 XP')).toBeTruthy();
     expect(xpFillPercent()).toBeCloseTo(25, 5);
+    await openWeek();
     expect(screen.getByText('XP hoje 1/10')).toBeTruthy();
+    await fireEvent.press(screen.getByText('Fechar'));
     expect(screen.getByText('Streak 1d')).toBeTruthy();
     expect(screen.getByText('Conquista desbloqueada: Primeira vitória')).toBeTruthy();
 
@@ -191,15 +189,14 @@ describe('QuestLogApp — fluxo no aparelho', () => {
     expect(screen.getByText('XP libera em 50s')).toBeTruthy();
 
     await fireEvent.press(screen.getByLabelText('Concluir quest Treino'));
-    expect(alertSpy).toHaveBeenCalledTimes(1);
-    expect(alertSpy.mock.calls[0][0]).toBe('Concluir sem XP?');
+    // Diálogo do app (não o Alert do sistema).
+    expect(alertSpy).not.toHaveBeenCalled();
+    expect(screen.getByText('Concluir sem XP?')).toBeTruthy();
     // Enquanto o jogador não confirma, nada muda.
     expect(screen.queryByText('Quest marcada')).toBeNull();
     expect(screen.queryByLabelText('Usar Rajada')).toBeNull();
 
-    await act(async () => {
-      pressAlertButton(alertSpy, 'Concluir sem XP');
-    });
+    await fireEvent.press(screen.getByText('Concluir sem XP'));
 
     expect(screen.getByText('Quest marcada')).toBeTruthy();
     await fireEvent.press(screen.getByLabelText('Fechar cena de vitória'));
@@ -207,8 +204,9 @@ describe('QuestLogApp — fluxo no aparelho', () => {
 
     expect(screen.getByText('0/100 XP')).toBeTruthy();
     expect(xpFillPercent()).toBe(0);
-    expect(screen.getByText('XP hoje 0/10')).toBeTruthy();
     expect(screen.getByText('Meta 1/1')).toBeTruthy();
+    await openWeek();
+    expect(screen.getByText('XP hoje 0/10')).toBeTruthy();
     expect((await readSave(storage)).stats.totalXpEarned).toBe(0);
   });
 
@@ -233,7 +231,7 @@ describe('QuestLogApp — fluxo no aparelho', () => {
     const storage = createMemoryStorage({ [STORAGE_KEY]: JSON.stringify(saved) });
     await render(<QuestLogApp store={createStateStore(storage)} />);
 
-    await screen.findByText('Maratona');
+    await screen.findByLabelText('Concluir quest Maratona');
     expect(screen.getByText('90/100 XP')).toBeTruthy();
     expect(xpFillPercent()).toBeCloseTo(90, 5);
 
@@ -274,7 +272,8 @@ describe('QuestLogApp — fluxo no aparelho', () => {
 
     // Reset devolve o ponto gasto.
     await fireEvent.press(screen.getByLabelText('Devolver pontos de atributo'));
-    await act(async () => pressAlertButton(alertSpy, 'Devolver'));
+    expect(screen.getByText('Devolver pontos?')).toBeTruthy();
+    await fireEvent.press(screen.getByTestId('confirm-ok'));
     expect(screen.getByTestId('attribute-intelligence').props.children).toBe(5);
     expect(screen.getByText('Você tem 2 pontos para distribuir.')).toBeTruthy();
 
@@ -301,15 +300,13 @@ describe('QuestLogApp — fluxo no aparelho', () => {
     await render(<QuestLogApp store={createStateStore(storage)} />);
     await completeOnboarding('Lucas');
     await fireEvent.press(screen.getByLabelText('Adicionar quest Beber água, mais 10 de XP'));
-    expect(screen.getByText('Beber água')).toBeTruthy();
+    expect(screen.getByLabelText('Concluir quest Beber água')).toBeTruthy();
 
     await fireEvent.press(screen.getByLabelText('Excluir quest Beber água'));
-    expect(alertSpy.mock.calls.at(-1)?.[0]).toBe('Excluir quest?');
-    await act(async () => {
-      pressAlertButton(alertSpy, 'Excluir');
-    });
+    expect(screen.getByText('Excluir quest?')).toBeTruthy();
+    await fireEvent.press(screen.getByTestId('confirm-ok'));
 
-    expect(screen.queryByText('Beber água')).toBeNull();
+    expect(screen.queryByLabelText('Concluir quest Beber água')).toBeNull();
     await advance(10);
     expect((await readSave(storage)).quests).toHaveLength(0);
   });
@@ -322,10 +319,73 @@ describe('QuestLogApp — fluxo no aparelho', () => {
     await fireEvent.press(screen.getByLabelText('Registrar quest'));
     expect(screen.getByText('Dê um nome para a quest.')).toBeTruthy();
 
-    await fireEvent.changeText(screen.getByLabelText('Título da quest'), 'Ler 10 páginas');
+    await fireEvent.changeText(screen.getByLabelText('Título da quest'), 'Regar as plantas');
     await fireEvent.press(screen.getByLabelText('Registrar quest'));
-    expect(screen.getByText('Ler 10 páginas')).toBeTruthy();
+    expect(screen.getByLabelText('Concluir quest Regar as plantas')).toBeTruthy();
     expect(screen.queryByText('Registrar missão')).toBeNull();
+  });
+
+  it('a dica de como lutar abre só na primeira luta; depois, pelo "?"', async () => {
+    const storage = createMemoryStorage();
+    await render(<QuestLogApp store={createStateStore(storage)} />);
+    await completeOnboarding('Lucas');
+
+    await fireEvent.press(screen.getByLabelText('Adicionar quest Beber água, mais 10 de XP'));
+    await advance(61_000);
+    await fireEvent.press(screen.getByLabelText('Concluir quest Beber água'));
+    expect(screen.getByText('Como lutar')).toBeTruthy();
+    await fightWith(...MAGE_PLAN);
+    await fireEvent.press(screen.getByLabelText('Fechar batalha'));
+    await advance(1000);
+    // O fim da luta não desfaz o "já viu a dica".
+    expect((await readSave(storage)).settings.battleTutorialDone).toBe(true);
+
+    await fireEvent.press(screen.getByLabelText('Adicionar quest Limpar inbox, mais 10 de XP'));
+    await advance(61_000);
+    await fireEvent.press(screen.getByLabelText('Concluir quest Limpar inbox'));
+    expect(screen.queryByText('Como lutar')).toBeNull();
+    await fireEvent.press(screen.getByTestId('battle-help'));
+    expect(screen.getByText('Como lutar')).toBeTruthy();
+    await fireEvent.press(screen.getByLabelText('Entendi, fechar dica de como lutar'));
+    expect(screen.queryByText('Como lutar')).toBeNull();
+  });
+
+  it('modo foco: escolhe o tempo, só mostra o cronômetro e no fim conclui a quest', async () => {
+    const storage = createMemoryStorage();
+    await render(<QuestLogApp store={createStateStore(storage)} />);
+    await completeOnboarding('Lucas');
+
+    await fireEvent.press(screen.getByLabelText('Adicionar quest Estudar 25min, mais 25 de XP'));
+    await advance(10);
+    const questId = (await readSave(storage)).quests[0].id;
+    await fireEvent.press(screen.getByTestId(`quest-focus-${questId}`));
+    expect(
+      screen.getByText('Por quanto tempo? Até acabar, o app mostra só o cronômetro.'),
+    ).toBeTruthy();
+    await fireEvent.press(screen.getByTestId('focus-minutes-15'));
+    await fireEvent.press(screen.getByTestId('focus-start'));
+
+    expect(screen.getByTestId('focus-timer')).toBeTruthy();
+    // A escolha de tempo fecha quando o foco começa.
+    expect(screen.queryByTestId('focus-start')).toBeNull();
+    expect(screen.getByTestId('focus-clock').props.children).toBe('15:00');
+    await advance(10);
+    expect((await readSave(storage)).focus?.minutes).toBe(15);
+
+    // Desistir pergunta antes; "Continuar" mantém o foco.
+    await fireEvent.press(screen.getByTestId('focus-give-up'));
+    expect(screen.getByText('Desistir do foco?')).toBeTruthy();
+    await fireEvent.press(screen.getByText('Continuar'));
+    expect(screen.getByTestId('focus-timer')).toBeTruthy();
+
+    await advance(15 * 60_000);
+    expect(screen.getByText('Tempo cumprido')).toBeTruthy();
+    await fireEvent.press(screen.getByTestId('focus-finish'));
+    expect(screen.queryByTestId('focus-timer')).toBeNull();
+    // A quest é concluída pelo caminho normal: a batalha abre.
+    expect(screen.getByLabelText('Usar Post-it')).toBeTruthy();
+    await advance(10);
+    expect((await readSave(storage)).focus).toBeNull();
   });
 
   it('pula o onboarding, fecha a meta do dia e desfaz a conclusão', async () => {
@@ -338,9 +398,11 @@ describe('QuestLogApp — fluxo no aparelho', () => {
     expect(screen.getByText('Herói')).toBeTruthy();
     expect(screen.getByText('Meta 0/1')).toBeTruthy();
     expect(screen.getByText('Uma quest hoje abre sua jornada. Isso basta.')).toBeTruthy();
+    await openWeek();
     expect(screen.getByTestId('week-strip')).toBeTruthy();
     expect(screen.getByText('A semana começa com a quest de hoje.')).toBeTruthy();
     expect(screen.getByText('Mais 2 níveis para Aventureiro.')).toBeTruthy();
+    await fireEvent.press(screen.getByText('Fechar'));
 
     await fireEvent.press(screen.getByLabelText('Adicionar quest Beber água, mais 10 de XP'));
     expect(screen.getByLabelText('Repetir a última quest Beber água')).toBeTruthy();

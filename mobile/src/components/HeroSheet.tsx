@@ -1,14 +1,5 @@
 import React, { useState } from 'react';
-import {
-  Alert,
-  Modal,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import appConfig from '../../app.json';
 import {
@@ -44,6 +35,7 @@ import { useReducedMotion } from '../platform/feedback';
 import { colors } from '../theme/colors';
 import { radius, space } from '../theme/spacing';
 import { CharacterArt } from './CharacterArt';
+import { ConfirmDialog } from './ConfirmDialog';
 import { Backpack } from './hero/Backpack';
 import { Bestiary } from './hero/Bestiary';
 import { SkillLoadout } from './hero/SkillLoadout';
@@ -135,27 +127,9 @@ export function HeroSheet({
   const talentPoints = talentPointsLeft(character);
   const spent = spentAttributePoints(state);
 
-  const confirmAttributeReset = () => {
-    Alert.alert(
-      'Devolver pontos?',
-      'Os atributos voltam ao início da classe e os pontos voltam para você.',
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        { text: 'Devolver', onPress: () => onHeroChange(resetAttributePoints) },
-      ],
-    );
-  };
-
-  const confirmReset = () => {
-    Alert.alert(
-      'Reiniciar jornada?',
-      'Seu herói, quests, XP e conquistas serão apagados deste aparelho. Não dá para desfazer.',
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        { text: 'Apagar tudo', style: 'destructive', onPress: onResetJourney },
-      ],
-    );
-  };
+  const [asking, setAsking] = useState<'ATTRIBUTES' | 'JOURNEY' | null>(null);
+  const confirmAttributeReset = () => setAsking('ATTRIBUTES');
+  const confirmReset = () => setAsking('JOURNEY');
 
   const journey: { label: string; value: string }[] = [
     { label: 'XP total', value: String(stats.totalXpEarned) },
@@ -500,6 +474,29 @@ export function HeroSheet({
           <Text style={styles.footer}>QuestLog v{appConfig.expo.version} · Shiguemori</Text>
         </ScrollView>
       </View>
+      <ConfirmDialog
+        visible={asking === 'ATTRIBUTES'}
+        title="Devolver pontos?"
+        message="Os atributos voltam ao início da classe e os pontos voltam para você."
+        confirmLabel="Devolver"
+        onCancel={() => setAsking(null)}
+        onConfirm={() => {
+          setAsking(null);
+          onHeroChange(resetAttributePoints);
+        }}
+      />
+      <ConfirmDialog
+        visible={asking === 'JOURNEY'}
+        title="Reiniciar jornada?"
+        message="Seu herói, quests, XP e conquistas serão apagados deste aparelho. Não dá para desfazer."
+        confirmLabel="Apagar tudo"
+        destructive
+        onCancel={() => setAsking(null)}
+        onConfirm={() => {
+          setAsking(null);
+          onResetJourney();
+        }}
+      />
     </Modal>
   );
 }

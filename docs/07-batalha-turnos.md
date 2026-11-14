@@ -76,6 +76,10 @@ Habilidades da árvore de talentos (começam bloqueadas):
 | | Energético | 0 | 4 | +5 energia e Animado +30% por 2 turnos |
 | | Entrega Expressa | 10 | 4 | 4 golpes + incomodado 3 turnos |
 
+**Combos** (`comboPartners`, `comboReady`): um golpe com bônus condicional combina com o golpe do mesmo herói que deixa o status pedido. Lembrete Chato → Pegadinha (incomodado) e Café Fervendo → Lista Riscada (fervendo). Quando o bônus vale agora, o botão ganha borda âmbar e o rótulo "Combo"; segurar o golpe mostra "Combina com" e, se for o caso, "Combo: pronto agora". Golpes de vida baixa (Faxina Final, Aspirador Turbo) também acendem quando o monstro está com 35% ou menos.
+
+**Como lutar**: a dica abre sozinha só na primeira luta (fica marcada como vista já no começo dela, para o fim da luta não desfazer). Depois, o botão "?" no canto de cima abre e fecha a dica. A descrição do golpe (segurar) aparece no meio da tela.
+
 Status: Fervendo (dano por turno), Incomodado (dano por turno, acumula), Travado (perde a vez), Cansado (−30% de dano), Animado (+40% de dano), Esquiva, Descansando (cura por turno), Guarda.
 
 ## Talentos, loadout e reset

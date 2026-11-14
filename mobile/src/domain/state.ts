@@ -14,6 +14,7 @@ import type {
   UserStats,
 } from './types';
 import { emptyBestiary, sanitizeBestiary } from './bestiary';
+import { sanitizeFocus } from './focus';
 import { emptyWeeklyBoss, sanitizeWeeklyBoss } from './boss';
 import { emptyDailyChallenges, sanitizeDailyChallenges } from './challenges';
 import { REPEAT_RULES } from './schedule';
@@ -40,6 +41,7 @@ export function defaultPlayerSettings(): PlayerSettings {
     battleTutorialDone: false,
     musicVolume: 0.6,
     dismissedRecapWeek: null,
+    challengesCollapsed: false,
   };
 }
 
@@ -80,6 +82,7 @@ export function createInitialState(): AppState {
     dailyChallenges: emptyDailyChallenges(),
     weeks: [],
     bestiary: emptyBestiary(),
+    focus: null,
   };
 }
 
@@ -234,6 +237,7 @@ function sanitizeSettings(raw: unknown): PlayerSettings {
       ? (raw.musicVolume as MusicVolume)
       : base.musicVolume,
     dismissedRecapWeek: toIsoDay(raw.dismissedRecapWeek),
+    challengesCollapsed: raw.challengesCollapsed === true,
   };
 }
 
@@ -269,13 +273,14 @@ export function sanitizeState(raw: unknown): AppState | null {
   if (!isRecord(raw)) return null;
   const character = sanitizeCharacter(raw.character);
   const onboardingDone = raw.onboardingDone === true;
+  const quests = sanitizeQuests(raw.quests);
   return {
     onboardingDone,
     character:
       onboardingDone && character.name.length === 0
         ? { ...character, name: DEFAULT_HERO_NAME }
         : character,
-    quests: sanitizeQuests(raw.quests),
+    quests,
     stats: sanitizeStats(raw.stats),
     settings: sanitizeSettings(raw.settings),
     inventory: sanitizeInventory(raw.inventory),
@@ -283,6 +288,10 @@ export function sanitizeState(raw: unknown): AppState | null {
     dailyChallenges: sanitizeDailyChallenges(raw.dailyChallenges),
     weeks: sanitizeWeeks(raw.weeks),
     bestiary: sanitizeBestiary(raw.bestiary),
+    focus: sanitizeFocus(
+      raw.focus,
+      new Set(quests.filter((quest) => !quest.completed).map((quest) => quest.id)),
+    ),
   };
 }
 

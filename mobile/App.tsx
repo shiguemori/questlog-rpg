@@ -6,6 +6,9 @@ import { ErrorBoundary } from './src/components/ErrorBoundary';
 import { LevelUpOverlay } from './src/components/LevelUpOverlay';
 import { BattleOverlay, type BattleRewardView } from './src/components/BattleOverlay';
 import { VillainDefeatOverlay } from './src/components/VillainDefeatOverlay';
+import { FocusTimer } from './src/components/FocusScreen';
+import { focusEndsAtMs, startFocus, stopFocus } from './src/domain/focus';
+import { syncFocusAlarm } from './src/platform/focusAlarm';
 import { XP_DENY_COPY } from './src/domain/antiFarm';
 import {
   applyEnemyMove,
@@ -167,6 +170,20 @@ interface BattleSession {
   reward: BattleRewardView | null;
   leveledUp: boolean;
   newLevel: number | null;
+  /** Primeira luta: abre a dica de como lutar (depois só pelo "?"). */
+  tutorial: boolean;
+}
+
+/**
+ * A dica de como lutar conta como vista já no começo da primeira luta. Assim o fim da
+ * luta (que parte do retrato tirado no começo) não desfaz isso.
+ */
+function withTutorialSeen(state: AppState): { state: AppState; tutorial: boolean } {
+  if (state.settings.battleTutorialDone) return { state, tutorial: false };
+  return {
+    state: { ...state, settings: { ...state.settings, battleTutorialDone: true } },
+    tutorial: true,
+  };
 }
 
 export interface QuestLogAppProps {
@@ -545,6 +562,11 @@ export function QuestLogApp({ store = stateStore }: QuestLogAppProps) {
     const boss = BOSSES[status.bossId];
     clearUndo();
     settledRef.current = false;
+    const seen = withTutorialSeen(current);
+    if (seen.tutorial) {
+      stateRef.current = seen.state;
+      setState(seen.state);
+    }
     const seed = now.getTime() >>> 0;
     const next: BattleSession = {
       kind: 'BOSS',
@@ -552,7 +574,8 @@ export function QuestLogApp({ store = stateStore }: QuestLogAppProps) {
       difficulty: 'HARD',
       seed,
       startedAtMs: now.getTime(),
-      snapshot: current,
+      snapshot: seen.state,
+      tutorial: seen.tutorial,
       battle: startBattle({
         character: current.character,
         category: boss.home,
@@ -600,6 +623,11 @@ export function QuestLogApp({ store = stateStore }: QuestLogAppProps) {
       if (plan === 'BATTLE') {
         clearUndo();
         settledRef.current = false;
+        const seen = withTutorialSeen(current);
+        if (seen.tutorial) {
+          stateRef.current = seen.state;
+          setState(seen.state);
+        }
         const seed = now.getTime() >>> 0;
         const next: BattleSession = {
           kind: 'QUEST',
@@ -607,7 +635,8 @@ export function QuestLogApp({ store = stateStore }: QuestLogAppProps) {
           difficulty: quest.difficulty,
           seed,
           startedAtMs: now.getTime(),
-          snapshot: current,
+          snapshot: seen.state,
+          tutorial: seen.tutorial,
           battle: startBattle({
             character: current.character,
             category: quest.category,
@@ -782,6 +811,42 @@ export function QuestLogApp({ store = stateStore }: QuestLogAppProps) {
     [clearUndo],
   );
 
+  const handleStartFocus = useCallback((questId: string, minutes: number): string | null => {
+    const current = stateRef.current;
+    if (!current) return 'A jornada ainda está carregando.';
+    const result = startFocus(current, questId, minutes, new Date());
+    if (!result.ok) return result.message;
+    stateRef.current = result.state;
+    setState(result.state);
+    const quest = current.quests.find((item) => item.id === questId);
+    if (result.state.focus && quest) {
+      void syncFocusAlarm(quest.title, focusEndsAtMs(result.state.focus));
+    }
+    announce(`Foco de ${minutes} minutos começou.`);
+    playHaptic('TAP');
+    return null;
+  }, []);
+
+  const handleGiveUpFocus = useCallback(() => {
+    const current = stateRef.current;
+    if (!current?.focus) return;
+    const next = stopFocus(current);
+    stateRef.current = next;
+    setState(next);
+    void syncFocusAlarm('', null);
+  }, []);
+
+  const handleFinishFocus = useCallback(() => {
+    const current = stateRef.current;
+    const questId = current?.focus?.questId;
+    if (!current || !questId) return;
+    const next = stopFocus(current);
+    stateRef.current = next;
+    setState(next);
+    void syncFocusAlarm('', null);
+    handleCompleteQuest(questId);
+  }, [handleCompleteQuest]);
+
   const handleClearCompleted = useCallback(() => {
     clearUndo();
     setState((current) => (current ? clearCompletedQuests(current) : current));
@@ -865,6 +930,7 @@ export function QuestLogApp({ store = stateStore }: QuestLogAppProps) {
           onCalendarDay={handleCalendarDay}
           heroRequest={heroRequest}
           onStartBoss={handleStartBoss}
+          onStartFocus={handleStartFocus}
         />
       ) : (
         <OnboardingScreen onComplete={handleOnboarding} />
@@ -884,10 +950,16 @@ export function QuestLogApp({ store = stateStore }: QuestLogAppProps) {
           }
           soundEnabled={state?.settings.soundEnabled ?? false}
           musicVolume={state?.settings.musicVolume ?? 0}
-          showTutorial={state ? !state.settings.battleTutorialDone : false}
-          onTutorialDone={() => patchSettings({ battleTutorialDone: true })}
+          key={session.seed}
+          showTutorial={session.tutorial}
         />
       ) : null}
+      <FocusTimer
+        focus={state.focus}
+        quest={state.quests.find((quest) => quest.id === state.focus?.questId) ?? null}
+        onGiveUp={handleGiveUpFocus}
+        onFinish={handleFinishFocus}
+      />
       <VillainDefeatOverlay
         event={victoryEvent}
         onDismiss={dismissVictory}

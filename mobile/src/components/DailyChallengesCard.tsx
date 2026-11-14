@@ -1,5 +1,5 @@
 import React from 'react';
-import { Image, StyleSheet, Text, View } from 'react-native';
+import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import {
   CHALLENGE_BONUS_FRAGMENTS,
   challengeText,
@@ -10,17 +10,23 @@ import { POTIONS } from '../domain/loot';
 import { colors } from '../theme/colors';
 import { radius, space } from '../theme/spacing';
 import { ITEM_ART } from './actorArt';
+import { Chevron } from './Chevron';
 
 /**
  * Três desafios do dia, com o progresso e a recompensa de cada um.
  * Os desafios mudam à meia-noite. Sem desafios ainda (primeiro boot), não mostra nada.
+ * Com `onToggle`, o cabeçalho recolhe e abre o cartão (a escolha fica salva).
  */
 export function DailyChallengesCard({
   challenges,
   today,
+  collapsed = false,
+  onToggle,
 }: {
   challenges: DailyChallenges;
   today: string;
+  collapsed?: boolean;
+  onToggle?: () => void;
 }) {
   if (challenges.date !== today || challenges.list.length === 0) return null;
   const done = challenges.list.filter(isChallengeDone).length;
@@ -28,15 +34,30 @@ export function DailyChallengesCard({
 
   return (
     <View style={styles.card} testID="daily-challenges">
-      <View style={styles.head}>
+      <Pressable
+        style={styles.head}
+        onPress={onToggle}
+        disabled={!onToggle}
+        accessibilityRole={onToggle ? 'button' : undefined}
+        accessibilityLabel={`Desafios de hoje, ${done} de ${challenges.list.length} feitos`}
+        accessibilityState={onToggle ? { expanded: !collapsed } : undefined}
+        hitSlop={8}
+        testID="daily-challenges-toggle"
+      >
         <Text style={styles.title}>Desafios de hoje</Text>
-        <Text
-          style={styles.count}
-          accessibilityLabel={`${done} de ${challenges.list.length} feitos`}
-        >
+        <Text style={styles.count}>
           {done}/{challenges.list.length}
         </Text>
-      </View>
+        {onToggle ? <Chevron direction={collapsed ? 'down' : 'up'} /> : null}
+      </Pressable>
+      {collapsed ? null : <ChallengeList challenges={challenges} all={all} />}
+    </View>
+  );
+}
+
+function ChallengeList({ challenges, all }: { challenges: DailyChallenges; all: boolean }) {
+  return (
+    <>
       {challenges.list.map((challenge) => {
         const finished = isChallengeDone(challenge);
         const potion = POTIONS[challenge.reward];
@@ -75,7 +96,7 @@ export function DailyChallengesCard({
             : 'Os três feitos.'
           : `Os três juntos dão +${CHALLENGE_BONUS_FRAGMENTS} fragmentos. Só missão com XP conta.`}
       </Text>
-    </View>
+    </>
   );
 }
 
@@ -90,8 +111,8 @@ const styles = StyleSheet.create({
     borderRadius: radius.lg,
     backgroundColor: colors.bgElevated,
   },
-  head: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' },
-  title: { fontSize: 15, fontWeight: '900', color: colors.text },
+  head: { flexDirection: 'row', alignItems: 'center', gap: space.sm, minHeight: 28 },
+  title: { flex: 1, fontSize: 15, fontWeight: '900', color: colors.text },
   count: {
     fontSize: 14,
     fontWeight: '800',

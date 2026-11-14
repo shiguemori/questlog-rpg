@@ -1586,6 +1586,40 @@ function conditionMet(target: BattleActor, condition: SkillCondition): boolean {
   return hasStatus(target, 'BURN');
 }
 
+/** Status que liga o bônus de cada condição (vida baixa não vem de golpe). */
+const CONDITION_STATUS: Record<SkillCondition, StatusId | null> = {
+  TARGET_LOW_HP: null,
+  TARGET_POISONED: 'POISON',
+  TARGET_BURNING: 'BURN',
+};
+
+/** O bônus do golpe vale agora (ex.: Pegadinha com o monstro incomodado). */
+export function comboReady(target: BattleActor, entry: BattleSkill): boolean {
+  return entry.bonus != null && conditionMet(target, entry.bonus.when);
+}
+
+/**
+ * Golpes do mesmo herói que combinam com este: os que deixam o status que o bônus
+ * dele pede, e os que aproveitam o status que ele deixa.
+ */
+export function comboPartners(
+  skills: readonly BattleSkill[],
+  entry: BattleSkill,
+): readonly BattleSkill[] {
+  const needs = entry.bonus ? CONDITION_STATUS[entry.bonus.when] : null;
+  const gives = new Set(
+    (entry.applies ?? []).filter((item) => item.target === 'TARGET').map((item) => item.status),
+  );
+  return skills.filter((other) => {
+    if (other.id === entry.id) return false;
+    const otherGives =
+      needs != null &&
+      (other.applies ?? []).some((item) => item.target === 'TARGET' && item.status === needs);
+    const otherNeeds = other.bonus ? CONDITION_STATUS[other.bonus.when] : null;
+    return otherGives || (otherNeeds != null && gives.has(otherNeeds));
+  });
+}
+
 function damageMultiplier(user: BattleActor): number {
   let multiplier = 1 + user.damageBonus / 100;
   const empower = statusOf(user, 'EMPOWER');

@@ -16,7 +16,14 @@ function waitLabel(minutes: number): string {
  * Vida do herói fora da luta. Ela volta 10% por hora; a barra se atualiza a cada minuto
  * só enquanto não está cheia.
  */
-export function HeroVitalsBar({ character }: { character: Character }) {
+export function HeroVitalsBar({
+  character,
+  compact = false,
+}: {
+  character: Character;
+  /** Meia largura (ao lado do XP): o "cheia em" vai para baixo da barra. */
+  compact?: boolean;
+}) {
   const [nowMs, setNowMs] = useState(() => Date.now());
   const now = new Date(nowMs);
   const hp = currentHeroHp(character, now);
@@ -39,7 +46,9 @@ export function HeroVitalsBar({ character }: { character: Character }) {
         <Text style={styles.label}>Vida</Text>
         <Text style={styles.value}>
           {hp}/{maxHp}
-          <Text style={styles.hint}>{full ? '  cheia' : `  cheia em ${waitLabel(minutes)}`}</Text>
+          {compact ? null : (
+            <Text style={styles.hint}>{full ? '  cheia' : `  cheia em ${waitLabel(minutes)}`}</Text>
+          )}
         </Text>
       </View>
       <View
@@ -52,12 +61,15 @@ export function HeroVitalsBar({ character }: { character: Character }) {
       >
         <View style={[styles.fill, { width: `${ratio * 100}%`, backgroundColor: tint }]} />
       </View>
+      {compact && !full ? (
+        <Text style={styles.compactHint}>cheia em {waitLabel(minutes)}</Text>
+      ) : null}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  wrap: { gap: space.xs },
+  wrap: { gap: space.sm },
   head: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' },
   label: { fontSize: 12, fontWeight: '700', color: colors.textMuted },
   value: {
@@ -67,8 +79,14 @@ const styles = StyleSheet.create({
     fontVariant: ['tabular-nums'],
   },
   hint: { fontWeight: '600', color: colors.textMuted },
+  compactHint: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: colors.textMuted,
+    fontVariant: ['tabular-nums'],
+  },
   track: {
-    height: 8,
+    height: 10,
     borderRadius: radius.pill,
     backgroundColor: colors.bgElevated,
     overflow: 'hidden',

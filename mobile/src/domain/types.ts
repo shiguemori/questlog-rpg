@@ -109,6 +109,8 @@ export interface PlayerSettings {
   musicVolume: MusicVolume;
   /** Semana (segunda-feira) cujo resumo já foi visto. */
   dismissedRecapWeek: string | null;
+  /** Cartão "Desafios de hoje" recolhido na tela principal. */
+  challengesCollapsed: boolean;
 }
 
 export type MusicVolume = 0 | 0.3 | 0.6 | 1;
@@ -139,4 +141,13 @@ export interface AppState {
   weeks: WeekRecord[];
   /** Monstros vencidos e jeitos de lutar já vistos (ver `bestiary.ts`). */
   bestiary: Bestiary;
+  /** Modo foco rodando (ver `focus.ts`), ou null. */
+  focus: FocusSession | null;
+}
+
+/** Cronômetro de foco numa quest aberta. `startedAt` em ISO 8601. */
+export interface FocusSession {
+  questId: string;
+  startedAt: string;
+  minutes: number;
 }

@@ -1,5 +1,5 @@
-import React, { memo } from 'react';
-import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
+import React, { memo, useState } from 'react';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { msUntilXpEligible } from '../domain/antiFarm';
 import { CATEGORY_LABELS, DIFFICULTY_LABELS } from '../domain/constants';
 import {
@@ -12,6 +12,7 @@ import type { Category, Quest } from '../domain/types';
 import { colors } from '../theme/colors';
 import { radius, space } from '../theme/spacing';
 import { CharacterArt } from './CharacterArt';
+import { ConfirmDialog } from './ConfirmDialog';
 
 /** Fundo do retrato do monstro: o tom do cômodo da arena dele. */
 const SOCKET_TINT: Record<Category, string> = {
@@ -33,6 +34,8 @@ export interface QuestRowProps {
   onDelete: (questId: string) => void;
   onEdit: (questId: string) => void;
   onToggleRecurring: (questId: string) => void;
+  /** Abre a escolha de tempo do modo foco. Sem ela, o botão Foco não aparece. */
+  onFocus?: (questId: string) => void;
 }
 
 function QuestRowBase({
@@ -42,7 +45,9 @@ function QuestRowBase({
   onDelete,
   onEdit,
   onToggleRecurring,
+  onFocus,
 }: QuestRowProps) {
+  const [asking, setAsking] = useState<'DELETE' | 'EARLY' | null>(null);
   // nowMs 0 = a lista já sabe que esta linha não está em contagem.
   const remainingMs = quest.completed || nowMs <= 0 ? 0 : msUntilXpEligible(quest, nowMs);
   const waitingForXp = !quest.completed && remainingMs > 0;
@@ -51,34 +56,9 @@ function QuestRowBase({
   const streak = quest.repeat ? liveQuestStreak(quest, new Date()) : 0;
 
   const handleComplete = () => {
-    if (!waitingForXp) {
-      onComplete(quest.id);
-      return;
-    }
     // Anti-farm preservado: concluir cedo é permitido, mas sem XP — e o jogador decide sabendo disso.
-    Alert.alert(
-      'Concluir sem XP?',
-      `Esta quest acabou de ser criada. Espere mais ${secondsLeft}s para ganhar +${quest.xp} XP.`,
-      [
-        { text: 'Esperar', style: 'cancel' },
-        {
-          text: 'Concluir sem XP',
-          style: 'destructive',
-          onPress: () => onComplete(quest.id),
-        },
-      ],
-    );
-  };
-
-  const handleDelete = () => {
-    Alert.alert(
-      'Excluir quest?',
-      `"${quest.title}" sai da sua lista. O XP que você já ganhou continua seu.`,
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        { text: 'Excluir', style: 'destructive', onPress: () => onDelete(quest.id) },
-      ],
-    );
+    if (waitingForXp) setAsking('EARLY');
+    else onComplete(quest.id);
   };
 
   return (
@@ -109,7 +89,7 @@ function QuestRowBase({
         {quest.completed ? <Text style={styles.doneBadge}>Feita</Text> : null}
         <Pressable
           style={({ pressed }) => [styles.deleteBtn, pressed && styles.pressed]}
-          onPress={handleDelete}
+          onPress={() => setAsking('DELETE')}
           accessibilityRole="button"
           accessibilityLabel={`Excluir quest ${quest.title}`}
           hitSlop={4}
@@ -144,9 +124,22 @@ function QuestRowBase({
               {quest.repeat ? REPEAT_LABELS[quest.repeat] : 'Repetir'}
             </Text>
           </Pressable>
+          {onFocus ? (
+            <Pressable
+              style={({ pressed }) => [styles.focusBtn, pressed && styles.pressed]}
+              onPress={() => onFocus(quest.id)}
+              accessibilityRole="button"
+              accessibilityLabel={`Focar em ${quest.title}`}
+              accessibilityHint="Escolhe quanto tempo e mostra só o cronômetro até acabar."
+              testID={`quest-focus-${quest.id}`}
+            >
+              <Text style={styles.focusBtnText}>Foco</Text>
+            </Pressable>
+          ) : null}
           <Pressable
             style={({ pressed }) => [
               styles.completeBtn,
+              onFocus != null && styles.completeBtnNextToFocus,
               waitingForXp && styles.completeBtnWaiting,
               pressed && styles.pressed,
             ]}
@@ -165,6 +158,31 @@ function QuestRowBase({
           </Pressable>
         </View>
       ) : null}
+
+      <ConfirmDialog
+        visible={asking === 'DELETE'}
+        title="Excluir quest?"
+        message={`"${quest.title}" sai da sua lista. O XP que você já ganhou continua seu.`}
+        confirmLabel="Excluir"
+        destructive
+        onCancel={() => setAsking(null)}
+        onConfirm={() => {
+          setAsking(null);
+          onDelete(quest.id);
+        }}
+      />
+      <ConfirmDialog
+        visible={asking === 'EARLY'}
+        title="Concluir sem XP?"
+        message={`Esta quest acabou de ser criada. Espere mais ${secondsLeft}s para ganhar +${quest.xp} XP.`}
+        confirmLabel="Concluir sem XP"
+        cancelLabel="Esperar"
+        onCancel={() => setAsking(null)}
+        onConfirm={() => {
+          setAsking(null);
+          onComplete(quest.id);
+        }}
+      />
     </View>
   );
 }
@@ -223,7 +241,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: space.lg,
-    paddingLeft: 60 + space.md,
     paddingRight: space.xs,
   },
   linkBtn: { minHeight: 44, justifyContent: 'center' },
@@ -236,10 +253,23 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     fontVariant: ['tabular-nums'],
   },
+  focusBtn: {
+    marginLeft: 'auto',
+    marginRight: -space.sm,
+    minHeight: 44,
+    minWidth: 72,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  focusBtnText: { fontWeight: '800', color: colors.text, fontSize: 15 },
   completeBtn: {
     marginLeft: 'auto',
     minHeight: 44,
-    minWidth: 96,
+    minWidth: 88,
     paddingHorizontal: 12,
     borderRadius: 10,
     borderWidth: 1,
@@ -248,6 +278,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  completeBtnNextToFocus: { marginLeft: 0 },
   completeBtnWaiting: { backgroundColor: 'transparent' },
   completeBtnText: { fontWeight: '900', color: colors.bg, fontSize: 15 },
   completeBtnTextWaiting: { color: colors.amberSoft },

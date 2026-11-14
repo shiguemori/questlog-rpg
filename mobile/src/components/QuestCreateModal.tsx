@@ -2,10 +2,11 @@ import React, { useEffect, useState } from 'react';
 import {
   Animated,
   Easing,
-  KeyboardAvoidingView,
+  Keyboard,
   Modal,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -42,7 +43,9 @@ const EASE_OUT = Easing.bezier(0.23, 1, 0.32, 1);
 /**
  * Modal de criação — ocasional / consistência espacial.
  * Entrada: opacity + scale 0.95→1 em 220ms ease-out (só opacity com "reduzir movimento").
- * O formulário sobe junto com o teclado e o erro aparece embaixo do campo.
+ * Teclado: o modal mede quanto o teclado cobre e encolhe a folha até ali; o
+ * formulário rola dentro dela e o campo do título (o primeiro) fica sempre à vista.
+ * O erro aparece embaixo do campo.
  */
 export function QuestCreateModal({
   visible,
@@ -89,6 +92,7 @@ function QuestCreateSheet({
   const [error, setError] = useState<string | null>(null);
   const opacity = useAnimatedValue(0);
   const scale = useAnimatedValue(0.95);
+  const keyboardOverlap = useKeyboardOverlap();
 
   useEffect(() => {
     opacity.setValue(0);
@@ -129,9 +133,16 @@ function QuestCreateSheet({
   };
 
   return (
-    <KeyboardAvoidingView
-      style={[styles.backdrop, { paddingBottom: insets.bottom + 16 }]}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+    <View
+      style={[
+        styles.backdrop,
+        {
+          paddingTop: insets.top + 16,
+          paddingBottom:
+            keyboardOverlap.overlap > 0 ? keyboardOverlap.overlap + 12 : insets.bottom + 16,
+        },
+      ]}
+      onLayout={keyboardOverlap.onLayout}
     >
       <Pressable
         style={StyleSheet.absoluteFill}
@@ -143,132 +154,170 @@ function QuestCreateSheet({
         style={[styles.sheet, { opacity, transform: [{ scale }] }]}
         accessibilityViewIsModal
       >
-        <Text style={styles.eyebrow}>{lockDifficulty ? 'Editar quest' : 'Nova quest'}</Text>
-        <Text style={styles.title}>{lockDifficulty ? 'Ajustar missão' : 'Registrar missão'}</Text>
+        <ScrollView
+          contentContainerStyle={styles.form}
+          keyboardShouldPersistTaps="handled"
+          bounces={false}
+        >
+          <Text style={styles.eyebrow}>{lockDifficulty ? 'Editar quest' : 'Nova quest'}</Text>
+          <Text style={styles.title}>{lockDifficulty ? 'Ajustar missão' : 'Registrar missão'}</Text>
 
-        <View style={styles.labelRow}>
-          <Text style={styles.label}>Título</Text>
-          <Text style={styles.counter}>
-            {title.length}/{QUEST_TITLE_MAX_LENGTH}
-          </Text>
-        </View>
-        <TextInput
-          style={[styles.input, error != null && styles.inputError]}
-          value={title}
-          onChangeText={changeTitle}
-          placeholder="ex: Beber 2L de água"
-          placeholderTextColor={colors.textDim}
-          onSubmitEditing={submit}
-          returnKeyType="done"
-          maxLength={QUEST_TITLE_MAX_LENGTH}
-          autoFocus
-          accessibilityLabel="Título da quest"
-        />
-        {error ? (
-          <Text style={styles.error} accessibilityLiveRegion="polite">
-            {error}
-          </Text>
-        ) : null}
+          <View style={styles.labelRow}>
+            <Text style={styles.label}>Título</Text>
+            <Text style={styles.counter}>
+              {title.length}/{QUEST_TITLE_MAX_LENGTH}
+            </Text>
+          </View>
+          <TextInput
+            style={[styles.input, error != null && styles.inputError]}
+            value={title}
+            onChangeText={changeTitle}
+            placeholder="ex: Beber 2L de água"
+            placeholderTextColor={colors.textDim}
+            onSubmitEditing={submit}
+            returnKeyType="done"
+            maxLength={QUEST_TITLE_MAX_LENGTH}
+            autoFocus
+            accessibilityLabel="Título da quest"
+          />
+          {error ? (
+            <Text style={styles.error} accessibilityLiveRegion="polite">
+              {error}
+            </Text>
+          ) : null}
 
-        <Text style={styles.label}>Categoria</Text>
-        <View style={styles.chipRow} accessibilityRole="radiogroup">
-          {CATEGORIES.map((c) => {
-            const selected = category === c;
-            return (
-              <Pressable
-                key={c}
-                onPress={() => setCategory(c)}
-                style={[styles.chip, selected && styles.chipSelected]}
-                accessibilityRole="radio"
-                accessibilityState={{ selected, checked: selected }}
-              >
-                <Text style={[styles.chipText, selected && styles.chipTextSelected]}>
-                  {CATEGORY_LABELS[c]}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
+          <Text style={styles.label}>Categoria</Text>
+          <View style={styles.chipRow} accessibilityRole="radiogroup">
+            {CATEGORIES.map((c) => {
+              const selected = category === c;
+              return (
+                <Pressable
+                  key={c}
+                  onPress={() => setCategory(c)}
+                  style={[styles.chip, selected && styles.chipSelected]}
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected, checked: selected }}
+                >
+                  <Text style={[styles.chipText, selected && styles.chipTextSelected]}>
+                    {CATEGORY_LABELS[c]}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
 
-        <Text style={styles.label}>Dificuldade</Text>
-        <View style={styles.chipRow} accessibilityRole="radiogroup">
-          {DIFFICULTIES.map((d) => {
-            const selected = difficulty === d;
-            return (
-              <Pressable
-                key={d}
-                onPress={() => {
-                  if (!lockDifficulty) setDifficulty(d);
-                }}
-                disabled={lockDifficulty}
-                style={[
-                  styles.chip,
-                  selected && styles.chipSelected,
-                  lockDifficulty && styles.locked,
-                ]}
-                accessibilityRole="radio"
-                accessibilityState={{
-                  selected,
-                  checked: selected,
-                  disabled: lockDifficulty === true,
-                }}
-                accessibilityLabel={`${DIFFICULTY_LABELS[d]}, mais ${XP_REWARDS[d]} de XP`}
-              >
-                <Text style={[styles.chipText, selected && styles.chipTextSelected]}>
-                  {DIFFICULTY_LABELS[d]} (+{XP_REWARDS[d]})
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
+          <Text style={styles.label}>Dificuldade</Text>
+          <View style={styles.chipRow} accessibilityRole="radiogroup">
+            {DIFFICULTIES.map((d) => {
+              const selected = difficulty === d;
+              return (
+                <Pressable
+                  key={d}
+                  onPress={() => {
+                    if (!lockDifficulty) setDifficulty(d);
+                  }}
+                  disabled={lockDifficulty}
+                  style={[
+                    styles.chip,
+                    selected && styles.chipSelected,
+                    lockDifficulty && styles.locked,
+                  ]}
+                  accessibilityRole="radio"
+                  accessibilityState={{
+                    selected,
+                    checked: selected,
+                    disabled: lockDifficulty === true,
+                  }}
+                  accessibilityLabel={`${DIFFICULTY_LABELS[d]}, mais ${XP_REWARDS[d]} de XP`}
+                >
+                  <Text style={[styles.chipText, selected && styles.chipTextSelected]}>
+                    {DIFFICULTY_LABELS[d]} (+{XP_REWARDS[d]})
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
 
-        {lockDifficulty ? null : (
-          <>
-            <Text style={styles.label}>Repetir</Text>
-            <View style={styles.chipRow} accessibilityRole="radiogroup">
-              {REPEAT_CHOICES.map((choice) => {
-                const selected = repeat === choice.value;
-                return (
-                  <Pressable
-                    key={choice.label}
-                    onPress={() => setRepeat(choice.value)}
-                    style={[styles.chip, selected && styles.chipSelected]}
-                    accessibilityRole="radio"
-                    accessibilityState={{ selected, checked: selected }}
-                    testID={`repeat-${choice.value ?? 'NONE'}`}
-                  >
-                    <Text style={[styles.chipText, selected && styles.chipTextSelected]}>
-                      {choice.label}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </View>
-          </>
-        )}
+          {lockDifficulty ? null : (
+            <>
+              <Text style={styles.label}>Repetir</Text>
+              <View style={styles.chipRow} accessibilityRole="radiogroup">
+                {REPEAT_CHOICES.map((choice) => {
+                  const selected = repeat === choice.value;
+                  return (
+                    <Pressable
+                      key={choice.label}
+                      onPress={() => setRepeat(choice.value)}
+                      style={[styles.chip, selected && styles.chipSelected]}
+                      accessibilityRole="radio"
+                      accessibilityState={{ selected, checked: selected }}
+                      testID={`repeat-${choice.value ?? 'NONE'}`}
+                    >
+                      <Text style={[styles.chipText, selected && styles.chipTextSelected]}>
+                        {choice.label}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </>
+          )}
 
-        <Text style={styles.note}>O XP libera 1 minuto depois de registrar.</Text>
+          <Text style={styles.note}>O XP libera 1 minuto depois de registrar.</Text>
 
-        <View style={styles.actions}>
-          <Pressable
-            style={({ pressed }) => [styles.secondary, pressed && styles.pressed]}
-            onPress={onClose}
-            accessibilityRole="button"
-          >
-            <Text style={styles.secondaryText}>Cancelar</Text>
-          </Pressable>
-          <Pressable
-            style={({ pressed }) => [styles.cta, pressed && styles.pressed]}
-            onPress={submit}
-            accessibilityRole="button"
-            accessibilityLabel="Registrar quest"
-          >
-            <Text style={styles.ctaText}>Registrar</Text>
-          </Pressable>
-        </View>
+          <View style={styles.actions}>
+            <Pressable
+              style={({ pressed }) => [styles.secondary, pressed && styles.pressed]}
+              onPress={onClose}
+              accessibilityRole="button"
+            >
+              <Text style={styles.secondaryText}>Cancelar</Text>
+            </Pressable>
+            <Pressable
+              style={({ pressed }) => [styles.cta, pressed && styles.pressed]}
+              onPress={submit}
+              accessibilityRole="button"
+              accessibilityLabel="Registrar quest"
+            >
+              <Text style={styles.ctaText}>Registrar</Text>
+            </Pressable>
+          </View>
+        </ScrollView>
       </Animated.View>
-    </KeyboardAvoidingView>
+    </View>
   );
+}
+
+/**
+ * Quanto o teclado cobre do modal, em pixels. Vem do topo do teclado na tela
+ * (`screenY`) comparado com a altura medida do modal: funciona tanto quando o
+ * Android encolhe a janela quanto quando não encolhe (Modal translúcido).
+ */
+function useKeyboardOverlap() {
+  const [keyboardTop, setKeyboardTop] = useState<number | null>(null);
+  const [frameHeight, setFrameHeight] = useState(0);
+
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const show = Keyboard.addListener(showEvent, (event) =>
+      setKeyboardTop(event.endCoordinates.screenY),
+    );
+    const hide = Keyboard.addListener(hideEvent, () => setKeyboardTop(null));
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, []);
+
+  return {
+    overlap: keyboardTop != null && frameHeight > 0 ? Math.max(0, frameHeight - keyboardTop) : 0,
+    onLayout: (event: { nativeEvent: { layout: { height: number } } }) => {
+      const height = event.nativeEvent.layout.height;
+      // Só a primeira medida (tela inteira): se a janela encolher, o overlap já sai 0.
+      setFrameHeight((current) => (current === 0 ? height : current));
+    },
+  };
 }
 
 const styles = StyleSheet.create({
@@ -277,13 +326,16 @@ const styles = StyleSheet.create({
     backgroundColor: colors.overlay,
     justifyContent: 'flex-end',
     paddingHorizontal: 16,
-    paddingTop: 16,
   },
   sheet: {
+    flexShrink: 1,
     borderRadius: 20,
     borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: colors.bgElevated,
+    overflow: 'hidden',
+  },
+  form: {
     paddingHorizontal: 20,
     paddingTop: 20,
     paddingBottom: 24,

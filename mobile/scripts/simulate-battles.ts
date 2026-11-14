@@ -168,13 +168,19 @@ if (process.argv[2] === 'tracos') {
           let wins = 0;
           for (const cls of CLASSES) {
             for (let run = 0; run < RUNS; run += 1) {
-              if (fight(cls, category, difficulty, level, 1000 + run * 7919, 'NORMAL', { trait }).won)
+              if (
+                fight(cls, category, difficulty, level, 1000 + run * 7919, 'NORMAL', { trait }).won
+              )
                 wins += 1;
             }
           }
-          cells.push(`${trait.padEnd(10)} ${((wins / (RUNS * CLASSES.length)) * 100).toFixed(0).padStart(3)}%`);
+          cells.push(
+            `${trait.padEnd(10)} ${((wins / (RUNS * CLASSES.length)) * 100).toFixed(0).padStart(3)}%`,
+          );
         }
-        lines.push(`${difficulty.padEnd(6)} nv${level} ${category.padEnd(6)} | ${cells.join(' | ')}`);
+        lines.push(
+          `${difficulty.padEnd(6)} nv${level} ${category.padEnd(6)} | ${cells.join(' | ')}`,
+        );
       }
     }
   }
@@ -196,7 +202,9 @@ if (process.argv[2] === 'chefes') {
           if (result.won) wins += 1;
           turns += result.turns;
         }
-        cells.push(`${cls.padEnd(7)} ${((wins / RUNS) * 100).toFixed(0).padStart(3)}% ${(turns / RUNS).toFixed(1)}t`);
+        cells.push(
+          `${cls.padEnd(7)} ${((wins / RUNS) * 100).toFixed(0).padStart(3)}% ${(turns / RUNS).toFixed(1)}t`,
+        );
       }
       lines.push(`${bossId.padEnd(15)} nv${level} | ${cells.join(' | ')}`);
     }

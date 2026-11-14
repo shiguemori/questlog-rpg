@@ -96,7 +96,13 @@ npx expo start -c      # -c limpa o cache do Metro (as dependências mudaram)
 - [ ] Cabeçalho mostra `Meta 0/1`, uma frase de retorno e a semana de 7 dias.
 - [ ] Concluir 1 quest (mesmo sem XP, se confirmar) muda para `Meta 1/1` e a frase aponta para amanhã. O XP **não** sobe se foi antes de 1 min.
 - [ ] Na cena, "Desfazer" em até 5 s devolve XP, streak e a meta. Depois disso o botão some.
-- [ ] O primeiro atalho é "Rápida" (Beber água). Depois de criar uma quest, "De novo" repete a última.
+- [ ] Atividades rápidas mostram título, categoria · dificuldade e XP; o filtro de categoria também filtra os atalhos. Depois de criar uma quest, "De novo" repete a última.
+- [ ] Cabeçalho: XP e Vida lado a lado; Streak e Meta embaixo do nome; "Semana" e "Chefe" abrem painéis que sobem do rodapé.
+- [ ] "Desafios de hoje" recolhe e abre pela seta e lembra a escolha.
+- [ ] Criar quest com o teclado aberto: o campo do título continua visível enquanto digita; o resto do formulário rola.
+- [ ] Excluir quest, limpar concluídas, devolver pontos e reiniciar jornada usam o diálogo do app (não o do Android).
+- [ ] Foco: "Foco" na quest → escolher o tempo → cronômetro em tela cheia, tela acesa, voltar do Android não sai. Bloquear o celular e voltar: o tempo seguiu. No fim, notificação "Foco concluído" e "Concluir quest" abre a batalha. "Desistir" pergunta antes.
+- [ ] Batalha: a dica "Como lutar" só aparece na primeira luta; o "?" abre de novo. Segurar um golpe mostra a descrição no meio da tela. Ladino: depois do Lembrete Chato, a Pegadinha fica com borda âmbar e "Combo".
 - [ ] Nada disso dispara notificação.
 
 ## 10. Visual

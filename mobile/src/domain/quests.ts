@@ -115,7 +115,12 @@ export function addQuest(
  */
 export function deleteQuest(state: AppState, questId: string): AppState {
   if (!state.quests.some((q) => q.id === questId)) return state;
-  return { ...state, quests: state.quests.filter((q) => q.id !== questId) };
+  return {
+    ...state,
+    quests: state.quests.filter((q) => q.id !== questId),
+    // Foco numa quest excluída acaba junto.
+    focus: state.focus?.questId === questId ? null : state.focus,
+  };
 }
 
 export type EditQuestResult = { ok: true; state: AppState } | { ok: false; message: string };

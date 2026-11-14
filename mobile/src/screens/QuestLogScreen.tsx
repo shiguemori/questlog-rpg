@@ -1,7 +1,6 @@
 import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { LinearGradient } from 'expo-linear-gradient';
 import {
-  Alert,
   Image,
   type ImageSourcePropType,
   Pressable,
@@ -14,6 +13,10 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PressScale } from '../motion/PressScale';
 import { BossCard } from '../components/BossCard';
+import { Chevron } from '../components/Chevron';
+import { ConfirmDialog } from '../components/ConfirmDialog';
+import { FocusPicker } from '../components/FocusScreen';
+import { InfoSheet } from '../components/InfoSheet';
 import { DailyChallengesCard } from '../components/DailyChallengesCard';
 import { CharacterArt } from '../components/CharacterArt';
 import { heroArtKey, heroLayers } from '../domain/loot';
@@ -25,11 +28,19 @@ import { WeekStrip } from '../components/WeekStrip';
 import { WeeklyRecap } from '../components/WeeklyRecap';
 import { XpBar } from '../components/XpBar';
 import { buildDailyXpSummary, msUntilXpEligible } from '../domain/antiFarm';
-import { CATEGORIES, CATEGORY_LABELS, CLASS_DEFAULTS } from '../domain/constants';
+import { BOSS_MIN_LEVEL, bossStatus, type BossStatus } from '../domain/boss';
+import {
+  CATEGORIES,
+  CATEGORY_LABELS,
+  CLASS_DEFAULTS,
+  DIFFICULTY_LABELS,
+  XP_REWARDS,
+} from '../domain/constants';
 import { localIsoDate } from '../domain/dates';
 import {
   buildDailyGoal,
   buildHabitCue,
+  buildWeekStrip,
   latestQuestDraft,
   shouldOfferReturn,
   streakTitle,
@@ -44,6 +55,7 @@ import type {
   AttributeKey,
   Category,
   CharacterClass,
+  Difficulty,
   PlayerSettings,
   Quest,
 } from '../domain/types';
@@ -86,6 +98,8 @@ interface QuestLogScreenProps {
   heroRequest?: number;
   /** Abre a luta contra o chefe da semana. */
   onStartBoss?: () => void;
+  /** Começa o modo foco numa quest. Devolve a mensagem de erro ou null. */
+  onStartFocus?: (questId: string, minutes: number) => string | null;
 }
 
 interface QuestSection {
@@ -122,6 +136,7 @@ export function QuestLogScreen({
   onCalendarDay,
   heroRequest = 0,
   onStartBoss,
+  onStartFocus,
 }: QuestLogScreenProps) {
   const insets = useSafeAreaInsets();
   const today = useLocalToday();
@@ -139,6 +154,10 @@ export function QuestLogScreen({
   }
   const [showAllDone, setShowAllDone] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [weekOpen, setWeekOpen] = useState(false);
+  const [bossOpen, setBossOpen] = useState(false);
+  const [askClear, setAskClear] = useState(false);
+  const [focusQuestId, setFocusQuestId] = useState<string | null>(null);
 
   const { character, stats } = state;
   const classLabel = CLASS_DEFAULTS[character.characterClass].label;
@@ -153,6 +172,15 @@ export function QuestLogScreen({
   const repeatDraft = latestQuestDraft(state.quests);
   const points = character.attributePoints;
   const recap = recapWeekFor(state, today);
+  const weekDays = buildWeekStrip(stats.completionDays, today).filter((cell) => cell.done).length;
+  const boss = bossStatus(state.weeklyBoss, new Date(), character.level);
+  const focusQuest = state.quests.find((quest) => quest.id === focusQuestId) ?? null;
+  // Filtro de categoria vale para os atalhos; a sugestão de hoje não aparece duas vezes.
+  const presets = QUEST_PRESETS.filter((preset) =>
+    filter === 'ALL'
+      ? !(showSuggestion && preset.id === suggestion.id)
+      : preset.category === filter,
+  );
 
   const { open, done } = useMemo(() => splitQuests(state.quests, filter), [state.quests, filter]);
 
@@ -180,26 +208,11 @@ export function QuestLogScreen({
     );
   };
 
-  const confirmClearCompleted = () => {
-    Alert.alert(
-      'Limpar concluídas?',
-      'As quests concluídas saem da lista. Seu XP, nível e streak continuam iguais.',
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        { text: 'Limpar', style: 'destructive', onPress: onClearCompleted },
-      ],
-    );
-  };
-
   const listHeader = (
     <View>
       <View style={styles.habitBlock}>
         <Text style={styles.habitCue} testID="habit-cue">
           {cue.message}
-        </Text>
-        <WeekStrip days={stats.completionDays} today={today} />
-        <Text style={styles.rankHint} testID="next-rank">
-          {nextRankHint(character.level)}
         </Text>
         {daily.limitReached ? (
           <Text style={styles.limitNote}>
@@ -214,18 +227,28 @@ export function QuestLogScreen({
           onDismiss={() => onPatchSettings({ dismissedRecapWeek: recap.weekKey })}
         />
       ) : null}
-      <DailyChallengesCard challenges={state.dailyChallenges} today={today} />
+      <DailyChallengesCard
+        challenges={state.dailyChallenges}
+        today={today}
+        collapsed={state.settings.challengesCollapsed}
+        onToggle={() =>
+          onPatchSettings({ challengesCollapsed: !state.settings.challengesCollapsed })
+        }
+      />
 
       <View style={styles.quickBlock}>
-        <Text style={[styles.label, styles.padded]}>Atividades rápidas</Text>
+        <Text style={[styles.label, styles.padded]}>Atividades rápidas · um toque registra</Text>
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.chipScroller}
         >
-          {repeatDraft ? (
-            <Pressable
-              style={({ pressed }) => [styles.presetChip, pressed && styles.pressed]}
+          {repeatDraft && filter === 'ALL' ? (
+            <QuickChip
+              kicker="De novo"
+              title={repeatDraft.title}
+              category={repeatDraft.category}
+              difficulty={repeatDraft.difficulty}
               onPress={() =>
                 setPresetError(
                   onAddQuest({
@@ -235,17 +258,15 @@ export function QuestLogScreen({
                   }),
                 )
               }
-              accessibilityRole="button"
               accessibilityLabel={`Repetir a última quest ${repeatDraft.title}`}
-            >
-              <Text style={styles.presetChipTitle} numberOfLines={1}>
-                De novo · {repeatDraft.title}
-              </Text>
-            </Pressable>
+            />
           ) : null}
-          {showSuggestion ? (
-            <Pressable
-              style={({ pressed }) => [styles.presetChip, pressed && styles.pressed]}
+          {showSuggestion && filter === 'ALL' ? (
+            <QuickChip
+              kicker="Sugestão de hoje"
+              title={suggestion.title}
+              category={suggestion.category}
+              difficulty={suggestion.difficulty}
               onPress={() =>
                 setPresetError(
                   onAddQuest({
@@ -255,32 +276,19 @@ export function QuestLogScreen({
                   }),
                 )
               }
-              accessibilityRole="button"
+              onDismiss={() => onPatchSettings({ dismissedSuggestionDate: today })}
               accessibilityLabel={`Sugestão de hoje: ${suggestion.title}`}
-            >
-              <Text style={styles.presetChipTitle} numberOfLines={2}>
-                Hoje · {suggestion.chip}
-              </Text>
-              <Pressable
-                onPress={() => onPatchSettings({ dismissedSuggestionDate: today })}
-                accessibilityRole="button"
-                accessibilityLabel="Dispensar sugestão de hoje"
-              >
-                <Text style={styles.presetChipMeta}>Dispensar</Text>
-              </Pressable>
-            </Pressable>
+            />
           ) : null}
-          {QUEST_PRESETS.map((preset) => (
-            <Pressable
+          {presets.map((preset) => (
+            <QuickChip
               key={preset.id}
-              style={({ pressed }) => [styles.presetChip, pressed && styles.pressed]}
+              title={preset.title}
+              category={preset.category}
+              difficulty={preset.difficulty}
               onPress={() => addPreset(preset)}
-              accessibilityRole="button"
               accessibilityLabel={`Adicionar quest ${preset.title}, mais ${presetXp(preset)} de XP`}
-            >
-              <Text style={styles.presetChipTitle}>{preset.chip}</Text>
-              <Text style={styles.presetChipMeta}>+{presetXp(preset)} XP</Text>
-            </Pressable>
+            />
           ))}
         </ScrollView>
         {presetError ? <Text style={[styles.errorText, styles.padded]}>{presetError}</Text> : null}
@@ -356,7 +364,7 @@ export function QuestLogScreen({
         ) : null}
         <Pressable
           style={({ pressed }) => [styles.ghostBtn, pressed && styles.pressed]}
-          onPress={confirmClearCompleted}
+          onPress={() => setAskClear(true)}
           accessibilityRole="button"
         >
           <Text style={styles.ghostBtnText}>Limpar concluídas</Text>
@@ -380,7 +388,6 @@ export function QuestLogScreen({
           style={styles.heroBackdrop}
           pointerEvents="none"
         />
-        <Text style={styles.brand}>QuestLog</Text>
         <Pressable
           style={({ pressed }) => [styles.heroRow, pressed && styles.pressedSoft]}
           onPress={() => setHeroOpen(true)}
@@ -395,16 +402,23 @@ export function QuestLogScreen({
             <CharacterArt
               assetKey={heroArtKey(character.characterClass, state.inventory)}
               layers={heroLayers(character.characterClass, state.inventory)}
-              size={96}
+              size={HERO_ART}
               accessibilityLabel={`${classLabel} ${character.name}`}
             />
           </View>
           <View style={styles.heroCopy}>
-            <Text style={styles.heroName} numberOfLines={2}>
+            <Text style={styles.heroName} numberOfLines={1}>
               {character.name}
             </Text>
-            <Text style={styles.heroMeta}>
+            <Text style={styles.heroMeta} numberOfLines={1}>
               {heroRankForLevel(character.level)} · {classLabel}
+            </Text>
+            <Text style={styles.heroStats} numberOfLines={1}>
+              <Text>Streak {stats.streak}d</Text>
+              {'  ·  '}
+              <Text style={goal.met ? styles.heroStatsDone : undefined} testID="daily-goal-chip">
+                Meta {goal.done}/{goal.target}
+              </Text>
             </Text>
           </View>
           <View style={[styles.profilePill, points > 0 && styles.profilePillActive]}>
@@ -415,34 +429,54 @@ export function QuestLogScreen({
         </Pressable>
 
         <View style={styles.meters}>
-          <XpBar xp={character.xp} maxXp={character.maxXp} level={character.level} />
-          <HeroVitalsBar character={character} />
+          <View style={styles.meter}>
+            <XpBar xp={character.xp} maxXp={character.maxXp} level={character.level} />
+          </View>
+          <View style={styles.meter}>
+            <HeroVitalsBar character={character} compact />
+          </View>
         </View>
 
         <View style={styles.statRow}>
-          <Text style={styles.statChip}>Streak {stats.streak}d</Text>
-          {streakName ? <Text style={styles.statChip}>{streakName}</Text> : null}
-          <Text
-            style={[styles.statChip, goal.met && styles.statChipAlert]}
-            testID="daily-goal-chip"
+          <Pressable
+            style={({ pressed }) => [styles.panelChip, pressed && styles.pressedSoft]}
+            onPress={() => setWeekOpen(true)}
+            accessibilityRole="button"
+            accessibilityLabel={`Sua semana: ${weekDays} de 7 dias com quest. Abrir detalhes.`}
+            hitSlop={6}
+            testID="week-open"
           >
-            Meta {goal.done}/{goal.target}
-          </Text>
-          <Text
-            style={[styles.statChip, daily.limitReached && styles.statChipAlert]}
-            testID="daily-xp-chip"
-          >
-            XP hoje {daily.xpQuestsToday}/{daily.xpQuestsLimit}
-          </Text>
+            <Text style={styles.panelChipText}>Semana {weekDays}/7</Text>
+            <Chevron direction="right" />
+          </Pressable>
+          {onStartBoss ? (
+            <Pressable
+              style={({ pressed }) => [
+                styles.panelChip,
+                boss.availability === 'READY' && styles.panelChipBoss,
+                pressed && styles.pressedSoft,
+              ]}
+              onPress={() => setBossOpen(true)}
+              accessibilityRole="button"
+              accessibilityLabel={`Chefe da semana: ${bossChipLabel(boss)}. Abrir detalhes.`}
+              hitSlop={6}
+              testID="boss-open"
+            >
+              <Text
+                style={[
+                  styles.panelChipText,
+                  boss.availability === 'READY' && styles.panelChipTextBoss,
+                ]}
+              >
+                {bossChipLabel(boss)}
+              </Text>
+              <Chevron
+                direction="right"
+                color={boss.availability === 'READY' ? BOSS_TINT : undefined}
+              />
+            </Pressable>
+          ) : null}
         </View>
-        {onStartBoss ? (
-          <BossCard
-            boss={state.weeklyBoss}
-            level={character.level}
-            now={new Date()}
-            onStart={onStartBoss}
-          />
-        ) : null}
       </View>
 
       {storageNotice ? (
@@ -501,6 +535,7 @@ export function QuestLogScreen({
         onDelete={onDeleteQuest}
         onEdit={setEditingId}
         onToggleRecurring={onToggleRecurring}
+        onFocus={onStartFocus ? setFocusQuestId : undefined}
         bottomInset={insets.bottom}
       />
 
@@ -537,6 +572,75 @@ export function QuestLogScreen({
         }}
       />
 
+      <InfoSheet
+        visible={weekOpen}
+        title="Sua semana"
+        onClose={() => setWeekOpen(false)}
+        testID="week-sheet"
+      >
+        <WeekStrip days={stats.completionDays} today={today} />
+        <View style={styles.sheetStats}>
+          <Text style={styles.statChip}>
+            Streak {stats.streak}d{streakName ? ` · ${streakName}` : ''}
+          </Text>
+          <Text
+            style={[styles.statChip, daily.limitReached && styles.statChipAlert]}
+            testID="daily-xp-chip"
+          >
+            XP hoje {daily.xpQuestsToday}/{daily.xpQuestsLimit}
+          </Text>
+        </View>
+        <Text style={styles.rankHint} testID="next-rank">
+          {nextRankHint(character.level)}
+        </Text>
+      </InfoSheet>
+
+      {onStartBoss ? (
+        <InfoSheet
+          visible={bossOpen}
+          title="Chefe da semana"
+          onClose={() => setBossOpen(false)}
+          testID="boss-sheet"
+        >
+          <BossCard
+            boss={state.weeklyBoss}
+            level={character.level}
+            now={new Date()}
+            onStart={() => {
+              setBossOpen(false);
+              onStartBoss();
+            }}
+          />
+          <Text style={styles.rankHint}>
+            Cada luta vencida na semana conta. Um chefe diferente a cada segunda.
+          </Text>
+        </InfoSheet>
+      ) : null}
+
+      <FocusPicker
+        key={focusQuestId ?? 'none'}
+        quest={focusQuest}
+        onClose={() => setFocusQuestId(null)}
+        onStart={(questId, minutes) => {
+          if (!onStartFocus) return 'Modo foco indisponível.';
+          const message = onStartFocus(questId, minutes);
+          if (!message) setFocusQuestId(null);
+          return message;
+        }}
+      />
+
+      <ConfirmDialog
+        visible={askClear}
+        title="Limpar concluídas?"
+        message="As quests concluídas saem da lista. Seu XP, nível e streak continuam iguais."
+        confirmLabel="Limpar"
+        onCancel={() => setAskClear(false)}
+        onConfirm={() => {
+          setAskClear(false);
+          onClearCompleted();
+        }}
+      />
+
       <HeroSheet
         visible={heroOpen}
         state={state}
@@ -554,6 +658,73 @@ export function QuestLogScreen({
         onShareWeek={onShareWeek}
       />
     </View>
+  );
+}
+
+const HERO_ART = 72;
+const BOSS_TINT = '#D8B4FE';
+
+function bossChipLabel(boss: BossStatus): string {
+  switch (boss.availability) {
+    case 'READY':
+      return 'Chefe pronto';
+    case 'LOCKED':
+      return `Chefe ${boss.wins}/${boss.needed}`;
+    case 'BEATEN':
+      return 'Chefe vencido';
+    case 'TRIED_TODAY':
+      return 'Chefe amanhã';
+    default:
+      return `Chefe no nv. ${BOSS_MIN_LEVEL}`;
+  }
+}
+
+/** Atividade rápida: o que é, de que tipo e quanto vale, antes de tocar. */
+function QuickChip({
+  kicker,
+  title,
+  category,
+  difficulty,
+  onPress,
+  onDismiss,
+  accessibilityLabel,
+}: {
+  kicker?: string;
+  title: string;
+  category: Category;
+  difficulty: Difficulty;
+  onPress: () => void;
+  onDismiss?: () => void;
+  accessibilityLabel: string;
+}) {
+  return (
+    <Pressable
+      style={({ pressed }) => [styles.presetChip, pressed && styles.pressed]}
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
+    >
+      {kicker ? <Text style={styles.presetKicker}>{kicker}</Text> : null}
+      <Text style={styles.presetChipTitle} numberOfLines={2}>
+        {title}
+      </Text>
+      <Text style={styles.presetChipMeta} numberOfLines={1}>
+        {CATEGORY_LABELS[category]} · {DIFFICULTY_LABELS[difficulty]}
+      </Text>
+      <View style={styles.presetFoot}>
+        <Text style={styles.presetXp}>+{XP_REWARDS[difficulty]} XP</Text>
+        {onDismiss ? (
+          <Pressable
+            onPress={onDismiss}
+            accessibilityRole="button"
+            accessibilityLabel="Dispensar sugestão de hoje"
+            hitSlop={8}
+          >
+            <Text style={styles.presetDismiss}>Dispensar</Text>
+          </Pressable>
+        ) : null}
+      </View>
+    </Pressable>
   );
 }
 
@@ -579,6 +750,7 @@ const QuestSections = memo(function QuestSections({
   onDelete,
   onEdit,
   onToggleRecurring,
+  onFocus,
   bottomInset,
 }: {
   quests: readonly Quest[];
@@ -589,6 +761,7 @@ const QuestSections = memo(function QuestSections({
   onDelete: (questId: string) => void;
   onEdit: (questId: string) => void;
   onToggleRecurring: (questId: string) => void;
+  onFocus?: (questId: string) => void;
   bottomInset: number;
 }) {
   const [nowMs, setNowMs] = useState(() => Date.now());
@@ -614,10 +787,11 @@ const QuestSections = memo(function QuestSections({
           onDelete={onDelete}
           onEdit={onEdit}
           onToggleRecurring={onToggleRecurring}
+          onFocus={onFocus}
         />
       );
     },
-    [nowMs, onComplete, onDelete, onEdit, onToggleRecurring],
+    [nowMs, onComplete, onDelete, onEdit, onToggleRecurring, onFocus],
   );
 
   return (
@@ -651,40 +825,51 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   heroBackdrop: { ...StyleSheet.absoluteFill, width: '100%', height: '100%' },
-  heroStage: { width: 96, height: 96, alignItems: 'center', justifyContent: 'flex-end' },
+  heroStage: {
+    width: HERO_ART,
+    height: HERO_ART,
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+  },
   heroShadow: {
     position: 'absolute',
     bottom: 2,
-    left: 18,
-    width: 60,
-    height: 60,
-    borderRadius: 30,
+    left: 14,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: 'rgba(5, 8, 20, 0.55)',
     transform: [{ scaleY: 0.18 }],
   },
-  meters: { gap: space.md },
-  habitBlock: { paddingHorizontal: space.gutter, paddingTop: space.lg, gap: space.md },
-  brand: {
-    fontSize: 12,
-    fontWeight: '800',
-    letterSpacing: 3,
-    textTransform: 'uppercase',
-    color: colors.amber,
+  meters: { flexDirection: 'row', gap: space.lg, alignItems: 'flex-start' },
+  meter: { flex: 1, minWidth: 0 },
+  habitBlock: {
+    paddingHorizontal: space.gutter,
+    paddingTop: space.lg,
+    paddingBottom: space.md,
+    gap: space.sm,
   },
   heroRow: {
     flexDirection: 'row',
     gap: space.md,
     alignItems: 'center',
-    minHeight: 96,
+    minHeight: HERO_ART,
   },
-  heroCopy: { flex: 1, gap: space.xs },
+  heroCopy: { flex: 1, gap: 2 },
   heroName: {
-    fontSize: 26,
+    fontSize: 22,
     fontWeight: '800',
     color: colors.text,
     letterSpacing: -0.3,
   },
   heroMeta: { fontSize: 14, fontWeight: '600', color: '#CBD5E1' },
+  heroStats: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.textMuted,
+    fontVariant: ['tabular-nums'],
+  },
+  heroStatsDone: { color: colors.amberSoft },
   profilePill: {
     minHeight: 32,
     paddingHorizontal: 12,
@@ -709,6 +894,22 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   statChipAlert: { color: colors.amberSoft, backgroundColor: colors.amberWash },
+  panelChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    minHeight: 30,
+    paddingLeft: space.md,
+    paddingRight: space.xs,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: 'rgba(30, 41, 59, 0.85)',
+  },
+  panelChipBoss: { borderColor: 'rgba(192, 132, 252, 0.8)' },
+  panelChipText: { fontSize: 12, fontWeight: '700', color: colors.text },
+  panelChipTextBoss: { color: BOSS_TINT },
+  sheetStats: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },
   rankHint: { fontSize: 12, fontWeight: '600', color: colors.textMuted },
   habitCue: { fontSize: 14, lineHeight: 20, color: colors.text },
   limitNote: { fontSize: 12, lineHeight: 17, color: colors.amberSoft },
@@ -748,25 +949,40 @@ const styles = StyleSheet.create({
   },
   undoText: { fontSize: 14, fontWeight: '800', color: colors.text },
   questList: { flex: 1 },
-  quickBlock: { paddingTop: space.xl, gap: space.md },
+  quickBlock: { paddingTop: space.xs, gap: space.md },
   filterBlock: { paddingTop: space.xl, paddingBottom: space.xs, gap: space.md },
   label: { fontSize: 13, fontWeight: '700', color: colors.textMuted },
   padded: { paddingHorizontal: space.gutter },
   errorText: { fontSize: 13, fontWeight: '600', color: colors.danger },
   chipScroller: { paddingHorizontal: space.gutter, gap: space.sm, paddingVertical: 2 },
   presetChip: {
-    minHeight: 56,
-    minWidth: 96,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 14,
+    width: 148,
+    minHeight: 96,
+    paddingHorizontal: space.md,
+    paddingVertical: space.md,
+    borderRadius: radius.md + 2,
     borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: colors.bgSoft,
-    justifyContent: 'center',
+    gap: 2,
   },
-  presetChipTitle: { fontSize: 14, fontWeight: '800', color: colors.text },
-  presetChipMeta: { marginTop: 2, fontSize: 11, fontWeight: '600', color: colors.amberSoft },
+  presetKicker: { fontSize: 11, fontWeight: '800', color: colors.amberSoft },
+  presetChipTitle: { fontSize: 14, lineHeight: 18, fontWeight: '800', color: colors.text },
+  presetChipMeta: { fontSize: 12, color: colors.textMuted },
+  presetFoot: {
+    marginTop: 'auto',
+    paddingTop: space.xs,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  presetXp: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: colors.amberSoft,
+    fontVariant: ['tabular-nums'],
+  },
+  presetDismiss: { fontSize: 12, fontWeight: '700', color: colors.textMuted },
   chip: {
     borderRadius: 12,
     borderWidth: 1,

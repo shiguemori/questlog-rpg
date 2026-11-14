@@ -77,6 +77,7 @@ describe('bônus de atributo e streak', () => {
       dailyChallenges: emptyDailyChallenges(),
       weeks: [],
       bestiary: emptyBestiary(),
+      focus: null,
     } satisfies AppState;
     const blocked = completeQuest(base, 'q1', new Date('2026-11-11T10:04:40.000Z'));
     assert.ok(blocked);
