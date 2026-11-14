@@ -20,14 +20,22 @@
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": true,
-      "versionCode": 1
+      "versionCode": 1,
+      "blockedPermissions": ["android.permission.RECORD_AUDIO"]
     },
     "web": {
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
       "expo-status-bar",
-      "expo-audio",
+      [
+        "expo-audio",
+        {
+          "microphonePermission": false,
+          "recordAudioAndroid": false,
+          "enableBackgroundPlayback": false
+        }
+      ],
       "expo-notifications",
       "expo-asset",
       [
@@ -39,6 +47,12 @@
           "backgroundColor": "#0F172A"
         }
       ]
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "a8975998-94ba-48ff-9e3a-5a6c5bff3dde"
+      }
+    },
+    "owner": "shiguemori"
   }
 }
